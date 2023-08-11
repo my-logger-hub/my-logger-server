@@ -7,16 +7,11 @@ use crate::app::{LogCtxItem, LogItem};
 #[derive(MyHttpInput)]
 pub struct SeqInputHttpData {
     #[http_body_raw(description = "The Seq of the request")]
-    body: Vec<u8>,
+    pub body: Vec<u8>,
 }
 
 impl SeqInputHttpData {
     pub fn parse_log_events(&self, tenant: &str) -> Option<Vec<LogItem>> {
-        println!(
-            "Parsing log events: {}",
-            std::str::from_utf8(self.body.as_slice()).unwrap()
-        );
-
         let mut result = LazyVec::new();
 
         for chunk in self.body.as_slice().split(|itm| *itm == 13u8) {
@@ -126,7 +121,11 @@ mod tests {
 
     #[test]
     fn test() {
-        let src = r#"{"@l":"Info","@t":"2023-08-11T20:08:33.283612+00:00","Process":"Table Schema verification","@m":"Db Schema is up to date for a table, trx_wallets","Version":"0.1.0","Application":"trx-wallet-grpc"}"#;
+        let src = r#"{"@l":"Info","@t":"2023-08-11T21:02:45.660712+00:00","Process":"Table Schema verification","@m":"Db Schema is up to date for a table, trx_wallets","Application":"trx-wallet-grpc","Version":"0.1.0"}
+{"@l":"Info","@t":"2023-08-11T21:02:45.687746+00:00","Process":"Table Schema verification","@m":"No Schema indexes is found for the table key_value. Indexes synchronization is skipping","Application":"trx-wallet-grpc","Version":"0.1.0"}
+{"@l":"Info","@t":"2023-08-11T21:02:45.687785+00:00","Process":"Table Schema verification","@m":"Db Schema is up to date for a table, key_value","Application":"trx-wallet-grpc","Version":"0.1.0"}
+{"@l":"Info","@t":"2023-08-11T21:02:45.688846+00:00","Process":"TelemetryWriterTimer","@m":"Timer TelemetryWriterTimer is started with delay 1 sec","Application":"trx-wallet-grpc","Version":"0.1.0"}
+{"@l":"Info","@t":"2023-08-11T21:02:45.687863+00:00","Process":"Starting Http Server","@m":"Http server starts at: 0.0.0.0:8000","Application":"trx-wallet-grpc","Version":"0.1.0"}"#;
 
         let item = LogItem::parse_as_seq_payload(src.as_bytes(), "test").unwrap();
 
