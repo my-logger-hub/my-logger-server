@@ -1,3 +1,4 @@
+use my_http_server::types::RawData;
 use my_http_server_swagger::MyHttpInput;
 use my_logger::LogLevel;
 use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec};
@@ -7,7 +8,7 @@ use crate::app::{LogCtxItem, LogItem};
 #[derive(MyHttpInput)]
 pub struct SeqInputHttpData {
     #[http_body_raw(description = "The Seq of the request")]
-    pub body: Vec<u8>,
+    pub body: RawData,
 }
 
 impl SeqInputHttpData {
