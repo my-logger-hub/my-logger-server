@@ -16,7 +16,7 @@ pub fn build_controllers(app: &Arc<AppContext>) -> ControllersMiddleware {
         None,
     );
 
-    result.register_get_action(Arc::new(
+    result.register_post_action(Arc::new(
         super::controllers::logs_income::PostLogsAction::new(app.clone()),
     ));
 

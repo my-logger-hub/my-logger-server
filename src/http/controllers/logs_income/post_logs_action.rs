@@ -6,7 +6,7 @@ use my_http_server::{HttpContext, HttpFailResult, HttpOkResult, HttpOutput};
 use crate::app::AppContext;
 
 #[my_http_server_swagger::http_route(
-    method: "GET",
+    method: "POST",
     route: "/api/events/raw",
     summary: "Writes Logs in Seq Format",
     description: "Writes Logs in Seq Format",
