@@ -4,8 +4,18 @@ use std::{net::SocketAddr, sync::Arc};
 
 use crate::app::AppContext;
 
+const DEFAULT_PORT: u16 = 8000;
+
 pub async fn setup_server(app: Arc<AppContext>) {
-    let mut http_server = MyHttpServer::new(SocketAddr::from(([0, 0, 0, 0], 8000)));
+    let http_port = if let Ok(result) = std::env::var("HTTP_PORT") {
+        match result.parse() {
+            Ok(port) => port,
+            Err(_) => DEFAULT_PORT,
+        }
+    } else {
+        DEFAULT_PORT
+    };
+    let mut http_server = MyHttpServer::new(SocketAddr::from(([0, 0, 0, 0], http_port)));
 
     let controllers = Arc::new(super::builder::build_controllers(&app));
 
