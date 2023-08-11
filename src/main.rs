@@ -19,7 +19,7 @@ async fn main() {
 
     crate::http::start_up::setup_server(app.clone()).await;
 
-    let mut my_timer = MyTimer::new(Duration::from_millis(100));
+    let mut my_timer = MyTimer::new(Duration::from_millis(500));
 
     my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
 

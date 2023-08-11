@@ -32,6 +32,7 @@ impl LogsQueue {
     }
 
     pub async fn add(&self, items: Vec<LogItem>) {
+        println!("Added events: {}", items.len());
         let mut write_access = self.queue.lock().await;
         if write_access.is_none() {
             *write_access = Some(VecDeque::new());

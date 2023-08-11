@@ -29,7 +29,10 @@ impl MyTimerTick for FlushToDbTimer {
             let mut attempt_no = 0;
             loop {
                 match self.app.logs_repo.upload(items.as_slice()).await {
-                    Ok(_) => break,
+                    Ok(_) => {
+                        println!("Events are updated to db");
+                        break;
+                    }
                     Err(err) => {
                         println!("Failed to upload logs to db: {:?}", err);
                         attempt_no += 1;
