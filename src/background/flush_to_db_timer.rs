@@ -26,6 +26,8 @@ impl MyTimerTick for FlushToDbTimer {
                 .map(|item| item.into())
                 .collect::<Vec<_>>();
 
+            println!("Found items to upload: {}", items.len());
+
             let mut attempt_no = 0;
             loop {
                 match self.app.logs_repo.upload(items.as_slice()).await {
