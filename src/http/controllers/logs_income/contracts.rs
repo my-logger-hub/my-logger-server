@@ -12,10 +12,15 @@ pub struct SeqInputHttpData {
 
 impl SeqInputHttpData {
     pub fn parse_log_events(&self, tenant: &str) -> Option<Vec<LogItem>> {
+        println!(
+            "Parsing log events: {}",
+            std::str::from_utf8(self.body.as_slice()).unwrap()
+        );
+
         let mut result = LazyVec::new();
 
         for chunk in self.body.as_slice().split(|itm| *itm == 13u8) {
-            match LogItem::parse_as_sql_payload(chunk, tenant) {
+            match LogItem::parse_as_seq_payload(chunk, tenant) {
                 Ok(log_data) => {
                     result.add(log_data);
                 }
@@ -33,7 +38,7 @@ impl SeqInputHttpData {
 }
 
 impl LogItem {
-    pub fn parse_as_sql_payload(bytes: &[u8], tenant: &str) -> Result<Self, String> {
+    pub fn parse_as_seq_payload(bytes: &[u8], tenant: &str) -> Result<Self, String> {
         let mut ctx = Vec::new();
 
         let mut timestamp = None;
@@ -112,5 +117,19 @@ impl LogItem {
             message: message.unwrap(),
             ctx,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::LogItem;
+
+    #[test]
+    fn test() {
+        let src = r#"{"@l":"Info","@t":"2023-08-11T20:08:33.283612+00:00","Process":"Table Schema verification","@m":"Db Schema is up to date for a table, trx_wallets","Version":"0.1.0","Application":"trx-wallet-grpc"}"#;
+
+        let item = LogItem::parse_as_seq_payload(src.as_bytes(), "test").unwrap();
+
+        println!("item: {:?}", item);
     }
 }

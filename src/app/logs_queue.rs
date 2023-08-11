@@ -9,6 +9,7 @@ pub struct LogCtxItem {
     pub key: String,
     pub value: String,
 }
+#[derive(Debug)]
 pub struct LogItem {
     pub id: String,
     pub tenant: String,
