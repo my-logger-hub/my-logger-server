@@ -6,7 +6,7 @@ use crate::app::{LogCtxItem, LogItem};
 
 #[derive(MyHttpInput)]
 pub struct SeqInputHttpData {
-    #[http_body(description = "The Seq of the request")]
+    #[http_body_raw(description = "The Seq of the request")]
     body: Vec<u8>,
 }
 
