@@ -1,0 +1,29 @@
+
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+package my_logger;
+
+enum LogLevel{
+    Info = 0;
+    Warning = 1;
+    Error = 2;
+    Fatal = 3;
+    Debug = 4;
+}
+
+message LogEvent{
+    string TenantId = 1;
+    int64 Timestamp = 2;
+    string Message = 3;
+    LogLevel Level = 4;
+    repeated LogEventContext Ctx = 5;
+}
+
+message LogEventContext{
+    string Key = 1;
+    string Value = 2;
+}
+service MyLogger {
+    rpc Write(stream LogEvent) returns (google.protobuf.Empty);
+    rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
+ }
