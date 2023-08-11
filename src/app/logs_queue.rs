@@ -36,7 +36,6 @@ impl LogsQueue {
         let mut write_access = self.queue.lock().await;
         if write_access.is_none() {
             *write_access = Some(VecDeque::new());
-            return;
         }
 
         write_access.as_mut().unwrap().extend(items);
