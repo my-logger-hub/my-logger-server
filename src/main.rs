@@ -6,9 +6,16 @@ use rust_extensions::MyTimer;
 
 mod app;
 mod background;
+mod grpc_server;
 mod http;
 mod postgres;
 mod settings;
+mod utils;
+
+#[allow(non_snake_case)]
+pub mod my_logger_grpc {
+    tonic::include_proto!("my_logger");
+}
 
 #[tokio::main]
 async fn main() {
@@ -24,6 +31,8 @@ async fn main() {
     my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
 
     my_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+
+    crate::grpc_server::start(app.clone());
 
     app.app_states.wait_until_shutdown().await;
 }

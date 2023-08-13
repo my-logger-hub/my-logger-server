@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use my_postgres::{MyPostgres, MyPostgresError, PostgresSettings};
+use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::app::APP_NAME;
 
-use super::dto::LogItemDto;
+use super::dto::*;
 
 const TABLE_NAME: &str = "logs";
 const PK_NAME: &str = "logs_pk";
@@ -22,9 +23,47 @@ impl LogsRepo {
                 .await,
         }
     }
+
     pub async fn upload(&self, items: &[LogItemDto]) -> Result<(), MyPostgresError> {
         self.postgres
             .bulk_insert_db_entities_if_not_exists(TABLE_NAME, items)
+            .await
+    }
+
+    pub async fn get(
+        &self,
+        tenant_id: &str,
+        from_date: DateTimeAsMicroseconds,
+        to_date: Option<DateTimeAsMicroseconds>,
+        levels: Option<Vec<LogLevelDto>>,
+    ) -> Result<Vec<LogItemDto>, MyPostgresError> {
+        let where_model = WhereModel {
+            tenant_id,
+            from_date,
+            to_date,
+            level: levels,
+        };
+
+        self.postgres
+            .query_rows(TABLE_NAME, Some(&where_model))
+            .await
+    }
+
+    pub async fn get_statistics(
+        &self,
+        tenant_id: &str,
+        from_date: DateTimeAsMicroseconds,
+        to_date: Option<DateTimeAsMicroseconds>,
+    ) -> Result<Vec<StatisticsModel>, MyPostgresError> {
+        let where_model = WhereModel {
+            tenant_id,
+            from_date,
+            to_date,
+            level: None,
+        };
+
+        self.postgres
+            .query_rows(TABLE_NAME, Some(&where_model))
             .await
     }
 }

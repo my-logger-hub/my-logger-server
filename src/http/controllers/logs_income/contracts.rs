@@ -101,7 +101,7 @@ impl LogItem {
             return Err("Can not find message in log".to_string());
         }
         Ok(Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: crate::utils::generate_log_id(),
             tenant: tenant.to_string(),
             level,
             timestamp: if let Some(timestamp) = timestamp {

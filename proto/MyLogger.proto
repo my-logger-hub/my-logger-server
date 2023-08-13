@@ -3,7 +3,7 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 package my_logger;
 
-enum LogLevel{
+enum LogLevelGrpcModel{
     Info = 0;
     Warning = 1;
     Error = 2;
@@ -11,19 +11,46 @@ enum LogLevel{
     Debug = 4;
 }
 
-message LogEvent{
+message LogEventGrpcModel{
     string TenantId = 1;
     int64 Timestamp = 2;
-    string Message = 3;
-    LogLevel Level = 4;
-    repeated LogEventContext Ctx = 5;
+    string ProcessName =3;
+    string Message = 4;
+    LogLevelGrpcModel Level = 5;
+    repeated LogEventContext Ctx = 6;
 }
 
 message LogEventContext{
     string Key = 1;
     string Value = 2;
 }
+
+message ReadLogEventRequest{
+    string TenantId = 1;
+    int64 FromTime =2;
+    int64 ToTime =3;
+    repeated LogLevelGrpcModel Levels = 4;
+    repeated string ContextKeys = 5;
+}
+
+message GetStatisticRequest{
+    string TenantId = 1;
+    int64 FromTime =2;
+    int64 ToTime =3;
+}
+
+message StatisticData{
+    int32 InfoCount = 1;
+    int32 WarningCount = 2;
+    int32 ErrorCount = 3;
+    int32 FatalCount = 4;
+    int32 DebugCount = 5;
+}
+
+
 service MyLogger {
-    rpc Write(stream LogEvent) returns (google.protobuf.Empty);
+    rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
+    rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
+    rpc GetStatistic(ReadLogEventRequest) returns (StatisticData);
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }

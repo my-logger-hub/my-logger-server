@@ -19,6 +19,9 @@ my-settings-reader = { tag = "0.1.5", git = "https://github.com/MyJetTools/my-se
     "background-reader",
 ] }
 
+my-grpc-extensions = { tag = "0.3.0", git = "https://github.com/MyJetTools/my-grpc-extensions.git" }
+
+
 flurl = { tag = "0.4.0", git = "https://github.com/MyJetTools/fl-url.git" }
 
 my-json = { tag = "0.2.0", git = "https://github.com/MyJetTools/my-json.git" }
@@ -42,6 +45,7 @@ signal-hook = "*"
 serde_yaml = "*"
 serde_repr = "*"
 uuid = { version = "*", features = ["v4"] }
+futures-core = "*"
 
 [build-dependencies]
 ci-utils = { git = "https://github.com/MyJetTools/ci-utils.git", tag = "0.1.0" }

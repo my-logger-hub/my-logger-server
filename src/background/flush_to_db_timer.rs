@@ -53,7 +53,7 @@ impl Into<LogItemDto> for LogItem {
         LogItemDto {
             id: self.id,
             tenant: self.tenant,
-            level: self.level.to_string().to_string(),
+            level: self.level.into(),
             process: if let Some(process) = self.process {
                 process
             } else {
