@@ -44,7 +44,7 @@ pub struct LogItemDto {
 
 #[derive(WhereDbModel)]
 pub struct WhereModel<'s> {
-    pub tenant_id: &'s str,
+    pub tenant: &'s str,
     #[sql_type("timestamp")]
     #[db_field_name("moment")]
     #[operator(">=")]

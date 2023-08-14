@@ -32,13 +32,13 @@ impl LogsRepo {
 
     pub async fn get(
         &self,
-        tenant_id: &str,
+        tenant: &str,
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
         levels: Option<Vec<LogLevelDto>>,
     ) -> Result<Vec<LogItemDto>, MyPostgresError> {
         let where_model = WhereModel {
-            tenant_id,
+            tenant,
             from_date,
             to_date,
             level: levels,
@@ -51,12 +51,12 @@ impl LogsRepo {
 
     pub async fn get_statistics(
         &self,
-        tenant_id: &str,
+        tenant: &str,
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
     ) -> Result<Vec<StatisticsModel>, MyPostgresError> {
         let where_model = WhereModel {
-            tenant_id,
+            tenant,
             from_date,
             to_date,
             level: None,
