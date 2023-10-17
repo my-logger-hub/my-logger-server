@@ -1,8 +1,6 @@
 use my_logger::LogLevel;
+use my_postgres::macros::*;
 use my_postgres::GroupByCount;
-use my_postgres_macros::{
-    DbEnumAsString, InsertDbEntity, SelectDbEntity, TableSchema, WhereDbModel,
-};
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::app::LogCtxItem;
@@ -46,12 +44,12 @@ pub struct LogItemDto {
 pub struct WhereModel<'s> {
     pub tenant: &'s str,
     #[sql_type("timestamp")]
-    #[db_field_name("moment")]
+    #[db_column_name("moment")]
     #[operator(">=")]
     pub from_date: DateTimeAsMicroseconds,
     #[sql_type("timestamp")]
     #[ignore_if_none]
-    #[db_field_name("moment")]
+    #[db_column_name("moment")]
     #[operator("<=")]
     pub to_date: Option<DateTimeAsMicroseconds>,
     #[ignore_if_none]
@@ -62,5 +60,5 @@ pub struct WhereModel<'s> {
 pub struct StatisticsModel {
     #[group_by]
     pub level: LogLevelDto,
-    pub count: GroupByCount,
+    pub count: GroupByCount<i32>,
 }

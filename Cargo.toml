@@ -6,11 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-my-http-server = { tag = "0.5.0", git = "https://github.com/MyJetTools/my-http-server.git" }
-my-http-server-controllers = { tag = "0.5.0", git = "https://github.com/MyJetTools/my-http-server-controllers.git" }
-my-http-server-swagger = { tag = "0.5.0", git = "https://github.com/MyJetTools/my-http-server-swagger.git" }
-
-
+my-http-server = { tag = "0.6.0", git = "https://github.com/MyJetTools/my-http-server.git", features = [
+    "static-files",
+    "macros",
+] }
 my-logger = { tag = "0.2.1", git = "https://github.com/MyJetTools/my-logger.git" }
 
 rust-extensions = { tag = "0.1.3", git = "https://github.com/MyJetTools/rust-extensions.git" }
@@ -19,18 +18,17 @@ my-settings-reader = { tag = "0.1.5", git = "https://github.com/MyJetTools/my-se
     "background-reader",
 ] }
 
-my-grpc-extensions = { tag = "0.3.0", git = "https://github.com/MyJetTools/my-grpc-extensions.git" }
+my-grpc-extensions = { tag = "0.5.0", git = "https://github.com/MyJetTools/my-grpc-extensions.git" }
 
 
 flurl = { tag = "0.4.0", git = "https://github.com/MyJetTools/fl-url.git" }
 
 my-json = { tag = "0.2.0", git = "https://github.com/MyJetTools/my-json.git" }
 
-my-postgres-macros = { tag = "0.4.7", git = "https://github.com/MyJetTools/my-postgres-macros.git" }
-my-postgres = { tag = "0.4.7", git = "https://github.com/MyJetTools/my-postgres.git", features = [
+my-postgres = { tag = "0.5.0", git = "https://github.com/MyJetTools/my-postgres.git", features = [
     "with-tls",
+    "macros",
 ] }
-
 
 async-trait = "*"
 tonic = { version = "*", features = ["tls", "tls-roots", "prost"] }

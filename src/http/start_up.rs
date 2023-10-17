@@ -1,5 +1,4 @@
-use my_http_server::MyHttpServer;
-use my_http_server_controllers::swagger::SwaggerMiddleware;
+use my_http_server::{controllers::swagger::SwaggerMiddleware, MyHttpServer};
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::app::AppContext;

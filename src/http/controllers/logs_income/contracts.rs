@@ -1,5 +1,4 @@
-use my_http_server::types::RawData;
-use my_http_server_swagger::MyHttpInput;
+use my_http_server::{macros::MyHttpInput, types::RawData};
 use my_logger::LogLevel;
 use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec};
 

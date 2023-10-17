@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use super::contracts::*;
-use my_http_server::{HttpContext, HttpFailResult, HttpOkResult, HttpOutput};
+use my_http_server::{macros::http_route, HttpContext, HttpFailResult, HttpOkResult, HttpOutput};
 
 use crate::app::AppContext;
 
-#[my_http_server_swagger::http_route(
+#[http_route(
     method: "POST",
     route: "/api/events/raw",
     summary: "Writes Logs in Seq Format",

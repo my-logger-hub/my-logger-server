@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use my_http_server_controllers::controllers::ControllersMiddleware;
+use my_http_server::controllers::ControllersMiddleware;
 
 use crate::app::AppContext;
 
