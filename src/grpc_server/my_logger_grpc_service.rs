@@ -1,21 +1,16 @@
-use std::pin::Pin;
 use std::time::Duration;
 
 use super::server::GrpcService;
 use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
 
-use futures_core::Stream;
+use my_grpc_extensions::server::with_result_as_stream;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tonic::async_trait]
 impl MyLogger for GrpcService {
-    type ReadStream = Pin<
-        Box<dyn Stream<Item = Result<LogEventGrpcModel, tonic::Status>> + Send + Sync + 'static>,
-    >;
-
     async fn write(
         &self,
         request: tonic::Request<tonic::Streaming<LogEventGrpcModel>>,
@@ -35,6 +30,7 @@ impl MyLogger for GrpcService {
         return Ok(tonic::Response::new(()));
     }
 
+    #[with_result_as_stream("LogEventGrpcModel")]
     async fn read(
         &self,
         request: tonic::Request<ReadLogEventRequest>,
@@ -68,7 +64,8 @@ impl MyLogger for GrpcService {
             .await
             .unwrap();
 
-        my_grpc_extensions::grpc_server::send_vec_to_stream(response, |dto| dto.into()).await
+        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), |dto| dto.into())
+            .await
     }
 
     async fn get_statistic(

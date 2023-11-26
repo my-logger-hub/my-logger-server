@@ -4,7 +4,7 @@ use my_postgres::GroupByCount;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::app::LogCtxItem;
-#[derive(DbEnumAsString)]
+#[derive(DbEnumAsString, Debug)]
 pub enum LogLevelDto {
     Info,
     Warning,
@@ -25,7 +25,7 @@ impl Into<LogLevelDto> for LogLevel {
     }
 }
 
-#[derive(TableSchema, InsertDbEntity, SelectDbEntity)]
+#[derive(TableSchema, InsertDbEntity, SelectDbEntity, Debug)]
 pub struct LogItemDto {
     #[primary_key(0)]
     pub tenant: String,
