@@ -29,8 +29,10 @@ message ReadLogEventRequest{
     string TenantId = 1;
     int64 FromTime =2;
     int64 ToTime =3;
-    repeated LogLevelGrpcModel Levels = 4;
-    repeated string ContextKeys = 5;
+    int32 Take = 4;
+    int32 Skip = 5;
+    repeated LogLevelGrpcModel Levels = 6;
+    repeated string ContextKeys = 7;
 }
 
 message GetStatisticRequest{

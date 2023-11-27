@@ -54,6 +54,24 @@ pub struct WhereModel<'s> {
     pub to_date: Option<DateTimeAsMicroseconds>,
     #[ignore_if_none]
     pub level: Option<Vec<LogLevelDto>>,
+    #[limit]
+    pub take: usize,
+}
+
+#[derive(WhereDbModel)]
+pub struct WhereStatisticsModel<'s> {
+    pub tenant: &'s str,
+    #[sql_type("timestamp")]
+    #[db_column_name("moment")]
+    #[operator(">=")]
+    pub from_date: DateTimeAsMicroseconds,
+    #[sql_type("timestamp")]
+    #[ignore_if_none]
+    #[db_column_name("moment")]
+    #[operator("<=")]
+    pub to_date: Option<DateTimeAsMicroseconds>,
+    #[ignore_if_none]
+    pub level: Option<Vec<LogLevelDto>>,
 }
 
 #[derive(SelectDbEntity)]

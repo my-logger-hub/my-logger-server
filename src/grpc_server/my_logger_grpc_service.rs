@@ -60,7 +60,13 @@ impl MyLogger for GrpcService {
         let response = self
             .app
             .logs_repo
-            .get(&request.tenant_id, from_date, to_date, log_levels)
+            .get(
+                &request.tenant_id,
+                from_date,
+                to_date,
+                log_levels,
+                request.take as usize,
+            )
             .await
             .unwrap();
 

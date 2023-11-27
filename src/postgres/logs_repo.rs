@@ -36,12 +36,14 @@ impl LogsRepo {
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
         levels: Option<Vec<LogLevelDto>>,
+        take: usize,
     ) -> Result<Vec<LogItemDto>, MyPostgresError> {
         let where_model = WhereModel {
             tenant,
             from_date,
             to_date,
             level: levels,
+            take,
         };
 
         self.postgres
@@ -55,7 +57,7 @@ impl LogsRepo {
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
     ) -> Result<Vec<StatisticsModel>, MyPostgresError> {
-        let where_model = WhereModel {
+        let where_model = WhereStatisticsModel {
             tenant,
             from_date,
             to_date,
