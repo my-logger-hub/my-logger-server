@@ -33,6 +33,7 @@ pub struct LogItemDto {
     pub tenant: String,
     #[primary_key(1)]
     #[sql_type("timestamp")]
+    #[order_by_desc]
     pub moment: DateTimeAsMicroseconds,
     #[db_index(id:0, index_name:"id_idx", is_unique:true, order:"ASC")]
     pub id: String,
