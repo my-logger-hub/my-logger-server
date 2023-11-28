@@ -76,7 +76,11 @@ impl Into<LogEventGrpcModel> for LogItemDto {
             process_name: self.process,
             message: self.message,
             level: log_level_grpc as i32,
-            ctx: self.context.into_iter().map(|item| item.into()).collect(),
+            ctx: self
+                .context
+                .into_iter()
+                .map(|(key, value)| LogEventContext { key, value })
+                .collect(),
         }
     }
 }

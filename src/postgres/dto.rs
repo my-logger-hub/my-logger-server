@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use my_logger::LogLevel;
 use my_postgres::macros::*;
 use my_postgres::GroupByCount;
@@ -32,12 +34,13 @@ pub struct LogItemDto {
     #[primary_key(1)]
     #[sql_type("timestamp")]
     pub moment: DateTimeAsMicroseconds,
+    #[db_index(id:0, index_name:"id_idx", is_unique:true, order:"ASC")]
     pub id: String,
     pub process: String,
     pub level: LogLevelDto,
     pub message: String,
     #[sql_type("bjson")]
-    pub context: Vec<LogCtxItem>,
+    pub context: BTreeMap<String, String>,
 }
 
 #[derive(WhereDbModel)]

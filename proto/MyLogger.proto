@@ -25,6 +25,12 @@ message LogEventContext{
     string Value = 2;
 }
 
+message GetStatisticsRequest{
+    string TenantId = 1;
+    int64 FromTime =2;
+    int64 ToTime =3;
+}
+
 message ReadLogEventRequest{
     string TenantId = 1;
     int64 FromTime =2;
@@ -32,7 +38,7 @@ message ReadLogEventRequest{
     int32 Take = 4;
     int32 Skip = 5;
     repeated LogLevelGrpcModel Levels = 6;
-    repeated string ContextKeys = 7;
+    repeated LogEventContext ContextKeys = 7;
 }
 
 message GetStatisticRequest{
@@ -53,6 +59,6 @@ message StatisticData{
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
     rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
-    rpc GetStatistic(ReadLogEventRequest) returns (StatisticData);
+    rpc GetStatistic(GetStatisticsRequest) returns (StatisticData);
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }

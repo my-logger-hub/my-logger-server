@@ -45,6 +45,7 @@ tokio-util = "*"
 futures = "*"
 signal-hook = "*"
 serde_yaml = "*"
+serde_json = "*"
 serde_repr = "*"
 uuid = { version = "*", features = ["v4"] }
 futures-core = "*"

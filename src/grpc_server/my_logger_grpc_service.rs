@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use super::server::GrpcService;
-use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
+use crate::{app::LogCtxItem, my_logger_grpc::my_logger_server::MyLogger};
 
-use my_grpc_extensions::server::with_result_as_stream;
+use my_grpc_extensions::server::generate_server_stream;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
@@ -30,7 +30,8 @@ impl MyLogger for GrpcService {
         return Ok(tonic::Response::new(()));
     }
 
-    #[with_result_as_stream("LogEventGrpcModel")]
+    generate_server_stream!(stream_name:"ReadStream", item_name:"LogEventGrpcModel");
+    //#[with_result_as_stream("LogEventGrpcModel")]
     async fn read(
         &self,
         request: tonic::Request<ReadLogEventRequest>,
@@ -43,6 +44,21 @@ impl MyLogger for GrpcService {
                     .levels()
                     .into_iter()
                     .map(|level| level.into())
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        let context = if request.context_keys.len() > 0 {
+            Some(
+                request
+                    .context_keys
+                    .into_iter()
+                    .map(|itm| LogCtxItem {
+                        key: itm.key,
+                        value: itm.value,
+                    })
                     .collect(),
             )
         } else {
@@ -65,6 +81,7 @@ impl MyLogger for GrpcService {
                 from_date,
                 to_date,
                 log_levels,
+                context,
                 request.take as usize,
             )
             .await
@@ -76,7 +93,7 @@ impl MyLogger for GrpcService {
 
     async fn get_statistic(
         &self,
-        request: tonic::Request<ReadLogEventRequest>,
+        request: tonic::Request<GetStatisticsRequest>,
     ) -> Result<tonic::Response<StatisticData>, tonic::Status> {
         let request = request.into_inner();
 
