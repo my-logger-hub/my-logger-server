@@ -5,7 +5,6 @@ use my_postgres::macros::*;
 use my_postgres::GroupByCount;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::app::LogCtxItem;
 #[derive(DbEnumAsString, Debug)]
 pub enum LogLevelDto {
     Info,
@@ -58,6 +57,9 @@ pub struct WhereModel<'s> {
     pub to_date: Option<DateTimeAsMicroseconds>,
     #[ignore_if_none]
     pub level: Option<Vec<LogLevelDto>>,
+    #[sql_type("bjson")]
+    #[ignore_if_none]
+    pub context: Option<BTreeMap<String, String>>,
     #[limit]
     pub take: usize,
 }

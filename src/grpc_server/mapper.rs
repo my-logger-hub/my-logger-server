@@ -1,8 +1,17 @@
-use crate::{app::LogCtxItem, my_logger_grpc::*, postgres::dto::LogItemDto};
+use std::collections::BTreeMap;
+
+use crate::{my_logger_grpc::*, postgres::dto::LogItemDto};
 
 impl Into<crate::app::LogItem> for LogEventGrpcModel {
     fn into(self) -> crate::app::LogItem {
         let level = self.level().into();
+
+        let mut ctx = BTreeMap::new();
+
+        for item in self.ctx {
+            ctx.insert(item.key, item.value);
+        }
+
         crate::app::LogItem {
             id: crate::utils::generate_log_id(),
             tenant: self.tenant_id,
@@ -10,14 +19,7 @@ impl Into<crate::app::LogItem> for LogEventGrpcModel {
             process: self.process_name.into(),
             message: self.message,
             timestamp: self.timestamp.into(),
-            ctx: self
-                .ctx
-                .into_iter()
-                .map(|item| crate::app::LogCtxItem {
-                    key: item.key,
-                    value: item.value,
-                })
-                .collect(),
+            ctx,
         }
     }
 }
@@ -54,15 +56,6 @@ impl Into<LogLevelGrpcModel> for crate::postgres::dto::LogLevelDto {
             crate::postgres::dto::LogLevelDto::Error => LogLevelGrpcModel::Error,
             crate::postgres::dto::LogLevelDto::FatalError => LogLevelGrpcModel::Fatal,
             crate::postgres::dto::LogLevelDto::Debug => LogLevelGrpcModel::Debug,
-        }
-    }
-}
-
-impl Into<LogEventContext> for LogCtxItem {
-    fn into(self) -> LogEventContext {
-        LogEventContext {
-            key: self.key,
-            value: self.value,
         }
     }
 }

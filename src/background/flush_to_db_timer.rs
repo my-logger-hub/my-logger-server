@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use rust_extensions::MyTimerTick;
 
@@ -50,11 +50,6 @@ impl MyTimerTick for FlushToDbTimer {
 
 impl Into<LogItemDto> for LogItem {
     fn into(self) -> LogItemDto {
-        let mut context = BTreeMap::new();
-
-        for itm in self.ctx {
-            context.insert(itm.key, itm.value);
-        }
         LogItemDto {
             id: self.id,
             tenant: self.tenant,
@@ -66,7 +61,7 @@ impl Into<LogItemDto> for LogItem {
             },
             message: self.message,
             moment: self.timestamp,
-            context,
+            context: self.ctx,
         }
     }
 }

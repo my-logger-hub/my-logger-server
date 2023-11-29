@@ -1,14 +1,7 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use my_logger::LogLevel;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
-use serde::*;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct LogCtxItem {
-    pub key: String,
-    pub value: String,
-}
 
 #[derive(Debug)]
 pub struct LogItem {
@@ -18,7 +11,7 @@ pub struct LogItem {
     pub process: Option<String>,
     pub message: String,
     pub timestamp: DateTimeAsMicroseconds,
-    pub ctx: Vec<LogCtxItem>,
+    pub ctx: BTreeMap<String, String>,
 }
 
 pub struct LogsQueue {

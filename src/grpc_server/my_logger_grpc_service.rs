@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::server::GrpcService;
+use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
-use crate::{app::LogCtxItem, my_logger_grpc::my_logger_server::MyLogger};
 
 use my_grpc_extensions::server::generate_server_stream;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
@@ -51,16 +52,11 @@ impl MyLogger for GrpcService {
         };
 
         let context = if request.context_keys.len() > 0 {
-            Some(
-                request
-                    .context_keys
-                    .into_iter()
-                    .map(|itm| LogCtxItem {
-                        key: itm.key,
-                        value: itm.value,
-                    })
-                    .collect(),
-            )
+            let mut ctx = BTreeMap::new();
+            for itm in request.context_keys {
+                ctx.insert(itm.key, itm.value);
+            }
+            Some(ctx)
         } else {
             None
         };

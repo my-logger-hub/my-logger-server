@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use my_postgres::{MyPostgres, MyPostgresError, PostgresSettings};
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::app::{LogCtxItem, APP_NAME};
+use crate::app::APP_NAME;
 
 use super::dto::*;
 
@@ -36,7 +36,7 @@ impl LogsRepo {
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
         levels: Option<Vec<LogLevelDto>>,
-        context: Option<Vec<LogCtxItem>>,
+        context: Option<BTreeMap<String, String>>,
         take: usize,
     ) -> Result<Vec<LogItemDto>, MyPostgresError> {
         let where_model = WhereModel {
@@ -45,6 +45,7 @@ impl LogsRepo {
             to_date,
             level: levels,
             take,
+            context,
         };
 
         self.postgres

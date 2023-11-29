@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
 use my_http_server::{macros::MyHttpInput, types::RawData};
 use my_logger::LogLevel;
 use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec};
 
-use crate::app::{LogCtxItem, LogItem};
+use crate::app::LogItem;
 
 #[derive(MyHttpInput)]
 pub struct SeqInputHttpData {
@@ -34,7 +36,7 @@ impl SeqInputHttpData {
 
 impl LogItem {
     pub fn parse_as_seq_payload(bytes: &[u8], tenant: &str) -> Result<Self, String> {
-        let mut ctx = Vec::new();
+        let mut ctx = BTreeMap::new();
 
         let mut timestamp = None;
 
@@ -88,10 +90,7 @@ impl LogItem {
                     message = Some(value.to_string());
                 }
                 _ => {
-                    ctx.push(LogCtxItem {
-                        key: name.to_string(),
-                        value: value.to_string(),
-                    });
+                    ctx.insert(name.to_string(), value.to_string());
                 }
             }
         }
