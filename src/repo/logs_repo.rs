@@ -48,10 +48,14 @@ impl LogsRepo {
             context,
         };
 
-        self.sqlite
+        let result = self
+            .sqlite
             .query_rows(TABLE_NAME, Some(&where_model))
             .await
-            .unwrap()
+            .unwrap();
+
+        println!("Got {} records for tenant {}", result.len(), tenant);
+        result
     }
 
     pub async fn get_statistics(
