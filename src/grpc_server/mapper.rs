@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{my_logger_grpc::*, postgres::dto::LogItemDto};
+use crate::{my_logger_grpc::*, repo::dto::LogItemDto};
 
 impl Into<crate::app::LogItem> for LogEventGrpcModel {
     fn into(self) -> crate::app::LogItem {
@@ -36,26 +36,26 @@ impl Into<my_logger::LogLevel> for LogLevelGrpcModel {
     }
 }
 
-impl Into<crate::postgres::dto::LogLevelDto> for LogLevelGrpcModel {
-    fn into(self) -> crate::postgres::dto::LogLevelDto {
+impl Into<crate::repo::dto::LogLevelDto> for LogLevelGrpcModel {
+    fn into(self) -> crate::repo::dto::LogLevelDto {
         match self {
-            LogLevelGrpcModel::Info => crate::postgres::dto::LogLevelDto::Info,
-            LogLevelGrpcModel::Warning => crate::postgres::dto::LogLevelDto::Warning,
-            LogLevelGrpcModel::Error => crate::postgres::dto::LogLevelDto::Error,
-            LogLevelGrpcModel::Fatal => crate::postgres::dto::LogLevelDto::FatalError,
-            LogLevelGrpcModel::Debug => crate::postgres::dto::LogLevelDto::Debug,
+            LogLevelGrpcModel::Info => crate::repo::dto::LogLevelDto::Info,
+            LogLevelGrpcModel::Warning => crate::repo::dto::LogLevelDto::Warning,
+            LogLevelGrpcModel::Error => crate::repo::dto::LogLevelDto::Error,
+            LogLevelGrpcModel::Fatal => crate::repo::dto::LogLevelDto::FatalError,
+            LogLevelGrpcModel::Debug => crate::repo::dto::LogLevelDto::Debug,
         }
     }
 }
 
-impl Into<LogLevelGrpcModel> for crate::postgres::dto::LogLevelDto {
+impl Into<LogLevelGrpcModel> for crate::repo::dto::LogLevelDto {
     fn into(self) -> LogLevelGrpcModel {
         match self {
-            crate::postgres::dto::LogLevelDto::Info => LogLevelGrpcModel::Info,
-            crate::postgres::dto::LogLevelDto::Warning => LogLevelGrpcModel::Warning,
-            crate::postgres::dto::LogLevelDto::Error => LogLevelGrpcModel::Error,
-            crate::postgres::dto::LogLevelDto::FatalError => LogLevelGrpcModel::Fatal,
-            crate::postgres::dto::LogLevelDto::Debug => LogLevelGrpcModel::Debug,
+            crate::repo::dto::LogLevelDto::Info => LogLevelGrpcModel::Info,
+            crate::repo::dto::LogLevelDto::Warning => LogLevelGrpcModel::Warning,
+            crate::repo::dto::LogLevelDto::Error => LogLevelGrpcModel::Error,
+            crate::repo::dto::LogLevelDto::FatalError => LogLevelGrpcModel::Fatal,
+            crate::repo::dto::LogLevelDto::Debug => LogLevelGrpcModel::Debug,
         }
     }
 }

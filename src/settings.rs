@@ -7,8 +7,8 @@ pub struct SettingsModel {
     #[serde(rename = "ApiKey")]
     pub api_key: Option<String>,
 
-    #[serde(rename = "PostgresConnString")]
-    pub postgres_conn_string: String,
+    #[serde(rename = "LogsDbPath")]
+    pub logs_db_path: String,
 }
 
 impl SettingsReader {
@@ -19,12 +19,33 @@ impl SettingsReader {
     }
      */
 
+    pub async fn get_logs_db_path(&self, file_name: &str) -> String {
+        let read_access = self.settings.read().await;
+
+        let mut result = if read_access.logs_db_path.starts_with("~") {
+            return read_access
+                .logs_db_path
+                .replace("~", &std::env::var("HOME").unwrap());
+        } else {
+            read_access.logs_db_path.clone()
+        };
+
+        if !result.ends_with(std::path::MAIN_SEPARATOR) {
+            result.push('/')
+        }
+
+        result.push_str(file_name);
+
+        result
+    }
+
     pub async fn get_default_tenant(&self) -> String {
         let read_access = self.settings.read().await;
         read_access.default_tenant.clone()
     }
 }
 
+/*
 #[async_trait::async_trait]
 impl my_postgres::PostgresSettings for SettingsReader {
     async fn get_connection_string(&self) -> String {
@@ -32,3 +53,4 @@ impl my_postgres::PostgresSettings for SettingsReader {
         read_access.postgres_conn_string.clone()
     }
 }
+ */

@@ -80,8 +80,7 @@ impl MyLogger for GrpcService {
                 context,
                 request.take as usize,
             )
-            .await
-            .unwrap();
+            .await;
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), |dto| dto.into())
             .await
@@ -105,8 +104,7 @@ impl MyLogger for GrpcService {
             .app
             .logs_repo
             .get_statistics(&request.tenant_id, from_date, to_date)
-            .await
-            .unwrap();
+            .await;
 
         let mut result = StatisticData {
             info_count: 0,
@@ -118,21 +116,15 @@ impl MyLogger for GrpcService {
 
         for itm in response {
             match itm.level {
-                crate::postgres::dto::LogLevelDto::Info => {
-                    result.info_count = itm.count.get_value()
-                }
-                crate::postgres::dto::LogLevelDto::Warning => {
+                crate::repo::dto::LogLevelDto::Info => result.info_count = itm.count.get_value(),
+                crate::repo::dto::LogLevelDto::Warning => {
                     result.warning_count = itm.count.get_value()
                 }
-                crate::postgres::dto::LogLevelDto::Error => {
-                    result.error_count = itm.count.get_value()
-                }
-                crate::postgres::dto::LogLevelDto::FatalError => {
+                crate::repo::dto::LogLevelDto::Error => result.error_count = itm.count.get_value(),
+                crate::repo::dto::LogLevelDto::FatalError => {
                     result.fatal_count = itm.count.get_value()
                 }
-                crate::postgres::dto::LogLevelDto::Debug => {
-                    result.debug_count = itm.count.get_value()
-                }
+                crate::repo::dto::LogLevelDto::Debug => result.debug_count = itm.count.get_value(),
             }
         }
 

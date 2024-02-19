@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rust_extensions::AppStates;
 
-use crate::postgres::LogsRepo;
+use crate::repo::LogsRepo;
 
 use super::LogsQueue;
 
@@ -18,9 +18,10 @@ pub const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 impl AppContext {
     pub async fn new(settings_reader: Arc<crate::settings::SettingsReader>) -> Self {
+        let logs_db_path = settings_reader.get_logs_db_path("logs.db").await;
         Self {
             app_states: Arc::new(AppStates::create_initialized()),
-            logs_repo: LogsRepo::new(settings_reader.clone()).await,
+            logs_repo: LogsRepo::new(logs_db_path).await,
             logs_queue: LogsQueue::new(),
             settings_reader,
         }

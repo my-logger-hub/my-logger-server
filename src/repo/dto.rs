@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
-use my_postgres::macros::*;
-use my_postgres::GroupByCount;
+use my_sqlite::macros::*;
+use my_sqlite::GroupByCount;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 #[derive(DbEnumAsString, Debug)]
@@ -39,7 +39,7 @@ pub struct LogItemDto {
     pub process: String,
     pub level: LogLevelDto,
     pub message: String,
-    #[sql_type("bjson")]
+    #[sql_type("jsonb")]
     pub context: BTreeMap<String, String>,
 }
 
@@ -57,7 +57,7 @@ pub struct WhereModel<'s> {
     pub to_date: Option<DateTimeAsMicroseconds>,
     #[ignore_if_none]
     pub level: Option<Vec<LogLevelDto>>,
-    #[sql_type("bjson")]
+    #[sql_type("jsonb")]
     #[ignore_if_none]
     pub context: Option<BTreeMap<String, String>>,
     #[limit]

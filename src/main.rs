@@ -8,7 +8,7 @@ mod app;
 mod background;
 mod grpc_server;
 mod http;
-mod postgres;
+mod repo;
 mod settings;
 mod utils;
 

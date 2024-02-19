@@ -4,7 +4,7 @@ use rust_extensions::MyTimerTick;
 
 use crate::{
     app::{AppContext, LogItem},
-    postgres::dto::LogItemDto,
+    repo::dto::LogItemDto,
 };
 
 pub struct FlushToDbTimer {
@@ -28,22 +28,7 @@ impl MyTimerTick for FlushToDbTimer {
 
             println!("Found items to upload: {}", items.len());
 
-            let mut attempt_no = 0;
-            loop {
-                match self.app.logs_repo.upload(items.as_slice()).await {
-                    Ok(_) => {
-                        println!("Events are updated to db");
-                        break;
-                    }
-                    Err(err) => {
-                        println!("Failed to upload logs to db: {:?}", err);
-                        attempt_no += 1;
-                        if attempt_no > 3 {
-                            break;
-                        }
-                    }
-                }
-            }
+            self.app.logs_repo.upload(items.as_slice()).await;
         }
     }
 }

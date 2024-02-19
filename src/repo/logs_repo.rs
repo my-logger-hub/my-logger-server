@@ -1,33 +1,33 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
-use my_postgres::{MyPostgres, MyPostgresError, PostgresSettings};
+use my_sqlite::*;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
-
-use crate::app::APP_NAME;
 
 use super::dto::*;
 
 const TABLE_NAME: &str = "logs";
-const PK_NAME: &str = "logs_pk";
+//const PK_NAME: &str = "logs_pk";
 
 pub struct LogsRepo {
-    postgres: MyPostgres,
+    sqlite: SqlLiteConnection,
 }
 
 impl LogsRepo {
-    pub async fn new(settings: Arc<dyn PostgresSettings + Send + Sync + 'static>) -> Self {
+    pub async fn new(path: String) -> Self {
         Self {
-            postgres: MyPostgres::from_settings(APP_NAME, settings)
-                .with_table_schema_verification::<LogItemDto>(TABLE_NAME, Some(PK_NAME.into()))
+            sqlite: SqlLiteConnectionBuilder::new(path)
+                .create_table_if_no_exists::<LogItemDto>(TABLE_NAME)
                 .build()
-                .await,
+                .await
+                .unwrap(),
         }
     }
 
-    pub async fn upload(&self, items: &[LogItemDto]) -> Result<(), MyPostgresError> {
-        self.postgres
-            .bulk_insert_db_entities_if_not_exists(TABLE_NAME, items)
+    pub async fn upload(&self, items: &[LogItemDto]) {
+        self.sqlite
+            .bulk_insert_db_entities_if_not_exists(items, TABLE_NAME)
             .await
+            .unwrap();
     }
 
     pub async fn get(
@@ -38,7 +38,7 @@ impl LogsRepo {
         levels: Option<Vec<LogLevelDto>>,
         context: Option<BTreeMap<String, String>>,
         take: usize,
-    ) -> Result<Vec<LogItemDto>, MyPostgresError> {
+    ) -> Vec<LogItemDto> {
         let where_model = WhereModel {
             tenant,
             from_date,
@@ -48,9 +48,10 @@ impl LogsRepo {
             context,
         };
 
-        self.postgres
+        self.sqlite
             .query_rows(TABLE_NAME, Some(&where_model))
             .await
+            .unwrap()
     }
 
     pub async fn get_statistics(
@@ -58,7 +59,7 @@ impl LogsRepo {
         tenant: &str,
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
-    ) -> Result<Vec<StatisticsModel>, MyPostgresError> {
+    ) -> Vec<StatisticsModel> {
         let where_model = WhereStatisticsModel {
             tenant,
             from_date,
@@ -66,8 +67,9 @@ impl LogsRepo {
             level: None,
         };
 
-        self.postgres
+        self.sqlite
             .query_rows(TABLE_NAME, Some(&where_model))
             .await
+            .unwrap()
     }
 }
