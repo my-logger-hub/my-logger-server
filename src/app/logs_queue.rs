@@ -14,6 +14,43 @@ pub struct LogItem {
     pub ctx: BTreeMap<String, String>,
 }
 
+impl LogItem {
+    pub fn is_application(&self, application: &str) -> bool {
+        if let Some(app_name) = self.ctx.get("Application") {
+            return app_name == application;
+        }
+
+        false
+    }
+
+    pub fn has_entry(&self, entry: &str) -> bool {
+        if let Some(process) = &self.process {
+            if !process.contains(entry) {
+                return false;
+            }
+        }
+        self.message.contains(entry)
+    }
+
+    pub fn is_level(&self, level: &str) -> bool {
+        match &self.level {
+            my_logger::LogLevel::Info => return level == "info",
+            my_logger::LogLevel::Warning => {
+                return level == "Warning";
+            }
+            my_logger::LogLevel::Error => {
+                return level == "Error";
+            }
+            my_logger::LogLevel::FatalError => {
+                return level == "FatalError";
+            }
+            my_logger::LogLevel::Debug => {
+                return level == "Debug";
+            }
+        }
+    }
+}
+
 pub struct LogsQueue {
     pub queue: tokio::sync::Mutex<Option<VecDeque<LogItem>>>,
 }

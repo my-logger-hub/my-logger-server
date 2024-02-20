@@ -25,7 +25,21 @@ impl MyLogger for GrpcService {
         .unwrap();
 
         if let Some(items) = items {
-            self.app.logs_queue.add(items).await;
+            let log_events = self
+                .app
+                .settings_reader
+                .filter_events(items, |event, filter_events| {
+                    for filter in filter_events {
+                        if filter.matches_ignore_filter(event) {
+                            return false;
+                        }
+                    }
+
+                    true
+                })
+                .await;
+
+            self.app.logs_queue.add(log_events).await;
         }
 
         return Ok(tonic::Response::new(()));
