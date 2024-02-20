@@ -1,4 +1,4 @@
-Settings examplse:
+Settings example:
 
 ```rust
 DefaultTenant: Default
@@ -6,5 +6,5 @@ LogsDbPath: /root/db
 IgnoreEvents:
 - level: Info
   application: app-name
-  marker: MessageHandler
+  marker: TextEntry
 ```
