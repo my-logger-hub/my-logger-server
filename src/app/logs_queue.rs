@@ -25,10 +25,9 @@ impl LogItem {
 
     pub fn has_entry(&self, entry: &str) -> bool {
         if let Some(process) = &self.process {
-            if !process.contains(entry) {
-                return false;
-            }
+            return process.contains(entry) || self.message.contains(entry);
         }
+
         self.message.contains(entry)
     }
 
