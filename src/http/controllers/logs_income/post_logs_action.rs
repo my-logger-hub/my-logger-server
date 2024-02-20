@@ -54,7 +54,9 @@ async fn handle_request(
             })
             .await;
 
-        action.app.logs_queue.add(log_events).await;
+        if log_events.len() > 0 {
+            action.app.logs_queue.add(log_events).await;
+        }
     }
 
     return HttpOutput::Empty.into_ok_result(true).into();

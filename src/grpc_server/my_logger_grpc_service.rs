@@ -39,7 +39,9 @@ impl MyLogger for GrpcService {
                 })
                 .await;
 
-            self.app.logs_queue.add(log_events).await;
+            if log_events.len() > 0 {
+                self.app.logs_queue.add(log_events).await;
+            }
         }
 
         return Ok(tonic::Response::new(()));
