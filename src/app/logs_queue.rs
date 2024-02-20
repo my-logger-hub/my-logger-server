@@ -33,11 +33,21 @@ impl LogItem {
 
     pub fn is_level(&self, level: &str) -> bool {
         match &self.level {
-            my_logger::LogLevel::Info => level == "Info",
-            my_logger::LogLevel::Warning => level == "Warning",
-            my_logger::LogLevel::Error => level == "Error",
-            my_logger::LogLevel::FatalError => level == "FatalError",
-            my_logger::LogLevel::Debug => level == "Debug",
+            my_logger::LogLevel::Info => {
+                rust_extensions::str_utils::compare_strings_case_insensitive(level, "info")
+            }
+            my_logger::LogLevel::Warning => {
+                rust_extensions::str_utils::compare_strings_case_insensitive(level, "warning")
+            }
+            my_logger::LogLevel::Error => {
+                rust_extensions::str_utils::compare_strings_case_insensitive(level, "error")
+            }
+            my_logger::LogLevel::FatalError => {
+                rust_extensions::str_utils::compare_strings_case_insensitive(level, "fatalerror")
+            }
+            my_logger::LogLevel::Debug => {
+                rust_extensions::str_utils::compare_strings_case_insensitive(level, "debug")
+            }
         }
     }
 }
