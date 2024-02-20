@@ -33,19 +33,11 @@ impl LogItem {
 
     pub fn is_level(&self, level: &str) -> bool {
         match &self.level {
-            my_logger::LogLevel::Info => return level == "info",
-            my_logger::LogLevel::Warning => {
-                return level == "Warning";
-            }
-            my_logger::LogLevel::Error => {
-                return level == "Error";
-            }
-            my_logger::LogLevel::FatalError => {
-                return level == "FatalError";
-            }
-            my_logger::LogLevel::Debug => {
-                return level == "Debug";
-            }
+            my_logger::LogLevel::Info => level == "Info",
+            my_logger::LogLevel::Warning => level == "Warning",
+            my_logger::LogLevel::Error => level == "Error",
+            my_logger::LogLevel::FatalError => level == "FatalError",
+            my_logger::LogLevel::Debug => level == "Debug",
         }
     }
 }
