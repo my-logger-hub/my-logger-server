@@ -5,6 +5,6 @@ DefaultTenant: Default
 LogsDbPath: /root/db
 IgnoreEvents:
 - level: Info
-  application: your-bourse-bridge
-  marker: FixMessageHandler
+  application: app-name
+  marker: MessageHandler
 ```
