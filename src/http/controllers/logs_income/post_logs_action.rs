@@ -41,23 +41,7 @@ async fn handle_request(
     let log_events = input_data.parse_log_events(get_default_tenant.as_str());
 
     if let Some(log_events) = log_events {
-        let log_events = action
-            .app
-            .settings_reader
-            .filter_events(log_events, |event, filter_events| {
-                for filter in filter_events {
-                    if filter.matches_ignore_filter(event) {
-                        return false;
-                    }
-                }
-
-                true
-            })
-            .await;
-
-        if log_events.len() > 0 {
-            action.app.logs_queue.add(log_events).await;
-        }
+        crate::flows::post_items(&action.app, log_events).await;
     }
 
     return HttpOutput::Empty.into_ok_result(true).into();

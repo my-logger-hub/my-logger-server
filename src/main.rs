@@ -6,10 +6,12 @@ use rust_extensions::MyTimer;
 
 mod app;
 mod background;
+mod flows;
 mod grpc_server;
 mod http;
 mod repo;
 mod settings;
+mod telegram_api;
 mod utils;
 
 #[allow(non_snake_case)]

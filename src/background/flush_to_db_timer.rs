@@ -21,6 +21,28 @@ impl FlushToDbTimer {
 impl MyTimerTick for FlushToDbTimer {
     async fn tick(&self) {
         while let Some(items) = self.app.logs_queue.get(1000).await {
+            for itm in &items {
+                match &itm.level {
+                    my_logger::LogLevel::Info => {}
+                    my_logger::LogLevel::Warning => {}
+                    my_logger::LogLevel::Error => {
+                        if let Some(telegram_settings) =
+                            self.app.settings_reader.get_telegram_settings().await
+                        {
+                            crate::telegram_api::send_message(&telegram_settings, itm).await;
+                        }
+                    }
+                    my_logger::LogLevel::FatalError => {
+                        if let Some(telegram_settings) =
+                            self.app.settings_reader.get_telegram_settings().await
+                        {
+                            crate::telegram_api::send_message(&telegram_settings, itm).await;
+                        }
+                    }
+                    my_logger::LogLevel::Debug => {}
+                }
+            }
+
             let items = items
                 .into_iter()
                 .map(|item| item.into())
