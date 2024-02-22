@@ -8,7 +8,7 @@ IgnoreEvents:
   application: app-name
   marker: TextEntry
 TelegramSettings:
-- api_key: string
+  api_key: string
   chat_id: string
   message_thread_id: number
   env_info: string
