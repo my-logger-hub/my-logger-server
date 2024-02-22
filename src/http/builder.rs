@@ -11,5 +11,8 @@ pub fn build_controllers(app: &Arc<AppContext>) -> ControllersMiddleware {
         super::controllers::logs_income::PostLogsAction::new(app.clone()),
     ));
 
+    result.register_post_action(Arc::new(
+        super::controllers::logs_income::PostLogsV2Action::new(app.clone()),
+    ));
     result
 }
