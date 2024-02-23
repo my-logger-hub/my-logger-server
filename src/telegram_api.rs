@@ -30,6 +30,7 @@ pub async fn send_message(telegram_settings: &TelegramSettings, log_item: &LogIt
             "message_thread_id",
             telegram_settings.message_thread_id.to_string(),
         ),
+        ("parse_mode", "Markdown".to_string()),
         (
             "text",
             format!(
