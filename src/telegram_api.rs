@@ -34,7 +34,7 @@ pub async fn send_message(telegram_settings: &TelegramSettings, log_item: &LogIt
         (
             "text",
             format!(
-                "{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```{:#?}```",
+                "---\n{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```\n{:#?}\n```\n",
                 log_item_level_to_telegram_str(&log_item),
                 telegram_settings.env_info,
                 process,
