@@ -34,7 +34,8 @@ pub async fn send_message(telegram_settings: &TelegramSettings, log_item: &LogIt
         (
             "text",
             format!(
-                "---\n{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```Context:\n{:#?}\n```\n",
+                "---\n{}\n{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```Context:\n{:#?}\n```\n",
+                log_item.timestamp.to_rfc3339(),
                 log_item_level_to_telegram_str(&log_item),
                 telegram_settings.env_info,
                 process,
