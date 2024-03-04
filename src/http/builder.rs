@@ -14,5 +14,14 @@ pub fn build_controllers(app: &Arc<AppContext>) -> ControllersMiddleware {
     result.register_post_action(Arc::new(
         super::controllers::logs_income::PostLogsV2Action::new(app.clone()),
     ));
+
+    // Settings controller
+
+    result.register_post_action(Arc::new(
+        super::controllers::settings::PostIgnoreAction::new(app.clone()),
+    ));
+    result.register_get_action(Arc::new(
+        super::controllers::settings::GetIgnoreAction::new(app.clone()),
+    ));
     result
 }

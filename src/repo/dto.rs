@@ -86,3 +86,16 @@ pub struct StatisticsModel {
     pub level: LogLevelDto,
     pub count: GroupByCount<i32>,
 }
+
+#[derive(TableSchema, InsertDbEntity, SelectDbEntity, UpdateDbEntity, Debug)]
+pub struct IgnoreItemDto {
+    #[primary_key(0)]
+    #[generate_where_model("IgnoreWhereModel")]
+    pub level: LogLevelDto,
+    #[primary_key(1)]
+    #[generate_where_model("IgnoreWhereModel")]
+    pub application: String,
+    #[primary_key(2)]
+    #[generate_where_model("IgnoreWhereModel")]
+    pub marker: String,
+}

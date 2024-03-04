@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
 use my_http_server::{macros::*, types::RawDataTyped, HttpFailResult};
-use my_logger::LogLevel;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 use serde::Deserialize;
 
-use crate::app::LogItem;
+use crate::{app::LogItem, http::controllers::shared_contract::LogLevelHttpModel};
 
 #[derive(MyHttpInput)]
 pub struct PostJsonLogsV2InputData {
@@ -34,7 +33,7 @@ impl PostJsonLogsV2InputData {
             result.push(LogItem {
                 id: crate::utils::generate_log_id(),
                 tenant: tenant.to_string(),
-                level: parse_log_level(&itm.level)?,
+                level: itm.level.into(),
                 process: itm.process,
                 message: itm.message,
                 timestamp,
@@ -53,22 +52,8 @@ impl PostJsonLogsV2InputData {
 #[derive(MyHttpInputObjectStructure, Deserialize, Debug)]
 pub struct JsonHttpLogItem {
     pub time_stamp: String,
-    pub level: String,
+    pub level: LogLevelHttpModel,
     pub process: Option<String>,
     pub message: String,
     pub context: Option<BTreeMap<String, String>>,
-}
-
-fn parse_log_level(src: &str) -> Result<LogLevel, HttpFailResult> {
-    match src {
-        "Info" => Ok(LogLevel::Info),
-        "Warning" => Ok(LogLevel::Warning),
-        "Error" => Ok(LogLevel::Error),
-        "FatalError" => Ok(LogLevel::FatalError),
-        "Debug" => Ok(LogLevel::Debug),
-        _ => Err(HttpFailResult::as_validation_error(format!(
-            "Invalid log level {}",
-            src
-        ))),
-    }
 }
