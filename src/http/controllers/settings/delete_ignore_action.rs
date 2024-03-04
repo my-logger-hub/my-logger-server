@@ -13,7 +13,7 @@ use crate::{app::AppContext, repo::dto::IgnoreWhereModel};
     input_data: DeleteIgnoreMaskHttpInput,
     controller: "Settings",
     result:[
-        {status_code: 202, description: "Ok response"},
+        {status_code: 204, description: "Ok response"},
     ]
 )]
 pub struct DeleteIgnoreAction {
@@ -39,5 +39,8 @@ async fn handle_request(
             marker: input_data.marker,
         })
         .await;
+
+    action.app.filter_events_cache.reset().await;
+
     return HttpOutput::Empty.into_ok_result(true).into();
 }

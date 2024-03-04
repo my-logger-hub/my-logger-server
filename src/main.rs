@@ -6,6 +6,7 @@ use rust_extensions::MyTimer;
 
 mod app;
 mod background;
+mod cache;
 mod flows;
 mod grpc_server;
 mod http;

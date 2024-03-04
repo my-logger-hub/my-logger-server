@@ -1,22 +1,37 @@
 use crate::app::{AppContext, LogItem};
 
 pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
-    let log_events = app
-        .settings_reader
-        .filter_events(log_events, |event, filter_events| {
-            for filter in filter_events {
-                if filter.matches_ignore_filter(event) {
-                    return false;
-                }
-            }
-
-            true
-        })
-        .await;
+    let log_events = filter_events(app, log_events).await;
 
     if log_events.len() == 0 {
         return;
     }
 
     app.logs_queue.add(log_events).await;
+}
+
+async fn filter_events(app: &AppContext, mut log_events: Vec<LogItem>) -> Vec<LogItem> {
+    loop {
+        let result = app
+            .filter_events_cache
+            .filter_events(log_events, |event, filter_events| {
+                for filter in filter_events {
+                    if filter.matches_ignore_filter(event) {
+                        return false;
+                    }
+                }
+
+                true
+            })
+            .await;
+
+        match result {
+            crate::cache::FilterEventResult::Ok(items) => return items,
+            crate::cache::FilterEventResult::NotInitialized(items) => {
+                log_events = items;
+                let filter_events = app.settings_repo.get_ignore_events().await;
+                app.filter_events_cache.apply(filter_events).await;
+            }
+        }
+    }
 }

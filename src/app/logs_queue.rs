@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, VecDeque};
 use my_logger::LogLevel;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
+use crate::repo::dto::LogLevelDto;
+
 #[derive(Debug)]
 pub struct LogItem {
     pub id: String,
@@ -31,23 +33,13 @@ impl LogItem {
         self.message.contains(entry)
     }
 
-    pub fn is_level(&self, level: &str) -> bool {
-        match &self.level {
-            my_logger::LogLevel::Info => {
-                rust_extensions::str_utils::compare_strings_case_insensitive(level, "info")
-            }
-            my_logger::LogLevel::Warning => {
-                rust_extensions::str_utils::compare_strings_case_insensitive(level, "warning")
-            }
-            my_logger::LogLevel::Error => {
-                rust_extensions::str_utils::compare_strings_case_insensitive(level, "error")
-            }
-            my_logger::LogLevel::FatalError => {
-                rust_extensions::str_utils::compare_strings_case_insensitive(level, "fatalerror")
-            }
-            my_logger::LogLevel::Debug => {
-                rust_extensions::str_utils::compare_strings_case_insensitive(level, "debug")
-            }
+    pub fn is_level(&self, level: &LogLevelDto) -> bool {
+        match level {
+            LogLevelDto::Info => level.is_info(),
+            LogLevelDto::Warning => level.is_warning(),
+            LogLevelDto::Error => level.is_error(),
+            LogLevelDto::FatalError => level.is_fatal_error(),
+            LogLevelDto::Debug => level.is_debug(),
         }
     }
 }

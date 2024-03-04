@@ -28,7 +28,7 @@ async fn handle_request(
     action: &GetIgnoreAction,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    let result = action.app.settings_repo.get().await;
+    let result = action.app.settings_repo.get_ignore_events().await;
 
     let mut model = Vec::with_capacity(result.len());
 

@@ -13,7 +13,7 @@ use crate::app::AppContext;
     input_data: "SeqInputHttpData",
     controller: "LogWriter",
     result:[
-        {status_code: 202, description: "Ok response"},
+        {status_code: 204, description: "Ok response"},
     ]
 )]
 pub struct PostLogsAction {

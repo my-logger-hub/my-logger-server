@@ -5,6 +5,8 @@ use my_sqlite::macros::*;
 use my_sqlite::GroupByCount;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
+use crate::app::LogItem;
+
 #[derive(DbEnumAsString, Debug)]
 pub enum LogLevelDto {
     Info,
@@ -12,6 +14,43 @@ pub enum LogLevelDto {
     Error,
     FatalError,
     Debug,
+}
+
+impl LogLevelDto {
+    pub fn is_info(&self) -> bool {
+        match self {
+            LogLevelDto::Info => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_warning(&self) -> bool {
+        match self {
+            LogLevelDto::Warning => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_error(&self) -> bool {
+        match self {
+            LogLevelDto::Error => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_fatal_error(&self) -> bool {
+        match self {
+            LogLevelDto::FatalError => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_debug(&self) -> bool {
+        match self {
+            LogLevelDto::Debug => true,
+            _ => false,
+        }
+    }
 }
 
 impl Into<LogLevelDto> for LogLevel {
@@ -98,4 +137,18 @@ pub struct IgnoreItemDto {
     #[primary_key(2)]
     #[generate_where_model("IgnoreWhereModel")]
     pub marker: String,
+}
+
+impl IgnoreItemDto {
+    pub fn matches_ignore_filter(&self, log_event: &LogItem) -> bool {
+        if !log_event.is_level(&self.level) {
+            return false;
+        }
+
+        if !log_event.is_application(&self.application) {
+            return false;
+        }
+
+        log_event.has_entry(self.marker.as_str())
+    }
 }

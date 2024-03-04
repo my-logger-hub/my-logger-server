@@ -19,7 +19,7 @@ impl SettingsRepo {
         }
     }
 
-    pub async fn get(&self) -> Vec<IgnoreItemDto> {
+    pub async fn get_ignore_events(&self) -> Vec<IgnoreItemDto> {
         self.sqlite
             .query_rows(TABLE_NAME, Some(&NoneWhereModel))
             .await
