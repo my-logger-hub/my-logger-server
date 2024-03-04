@@ -46,7 +46,7 @@ impl FlushToDbTimer {
         let telegram_settings = telegram_settings.unwrap();
 
         for itm in to_send {
-            crate::telegram_api::send_message(&telegram_settings, itm).await;
+            crate::telegram_api::send_log_item(&telegram_settings, itm).await;
         }
     }
 }

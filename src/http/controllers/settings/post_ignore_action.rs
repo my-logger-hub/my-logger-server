@@ -30,15 +30,15 @@ async fn handle_request(
     input_data: PostIgnoreMaskHttpInput,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    action
-        .app
-        .settings_repo
-        .add_ignore_event(&IgnoreItemDto {
+    crate::flows::add_ignore_event(
+        &action.app,
+        IgnoreItemDto {
             level: input_data.level.into(),
             application: input_data.application,
             marker: input_data.marker,
-        })
-        .await;
+        },
+    )
+    .await;
 
     action.app.filter_events_cache.reset().await;
     return HttpOutput::Empty.into_ok_result(true).into();

@@ -11,7 +11,7 @@ pub fn log_item_level_to_telegram_str(log_item: &LogItem) -> &str {
 }
 
 // Define a function to send a message using the Telegram Bot API
-pub async fn send_message(telegram_settings: &TelegramSettings, log_item: &LogItem) {
+pub async fn send_log_item(telegram_settings: &TelegramSettings, log_item: &LogItem) {
     // Set the API endpoint and parameters
     let url = format!(
         "https://api.telegram.org/bot{}/sendMessage",

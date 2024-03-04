@@ -7,7 +7,7 @@ use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::app::LogItem;
 
-#[derive(DbEnumAsString, Debug)]
+#[derive(DbEnumAsString, Debug, Clone)]
 pub enum LogLevelDto {
     Info,
     Warning,

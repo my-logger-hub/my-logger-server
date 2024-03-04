@@ -30,17 +30,15 @@ async fn handle_request(
     input_data: DeleteIgnoreMaskHttpInput,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    action
-        .app
-        .settings_repo
-        .delete_ignore_event(&IgnoreWhereModel {
+    crate::flows::remove_ignore_event(
+        &action.app,
+        IgnoreWhereModel {
             level: input_data.level.into(),
             application: input_data.application,
             marker: input_data.marker,
-        })
-        .await;
-
-    action.app.filter_events_cache.reset().await;
+        },
+    )
+    .await;
 
     return HttpOutput::Empty.into_ok_result(true).into();
 }
