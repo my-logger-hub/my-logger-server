@@ -23,5 +23,10 @@ pub fn build_controllers(app: &Arc<AppContext>) -> ControllersMiddleware {
     result.register_get_action(Arc::new(
         super::controllers::settings::GetIgnoreAction::new(app.clone()),
     ));
+
+    result.register_delete_action(Arc::new(
+        super::controllers::settings::DeleteIgnoreAction::new(app.clone()),
+    ));
+
     result
 }

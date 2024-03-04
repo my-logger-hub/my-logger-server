@@ -15,6 +15,18 @@ pub struct PostIgnoreMaskHttpInput {
     pub marker: String,
 }
 
+#[derive(Debug, MyHttpInput)]
+pub struct DeleteIgnoreMaskHttpInput {
+    #[http_query(description: "Log Level")]
+    pub level: LogLevelHttpModel,
+
+    #[http_query(description: "Application name")]
+    pub application: String,
+
+    #[http_query(description: "Filter marker")]
+    pub marker: String,
+}
+
 #[derive(Debug, MyHttpObjectStructure, Serialize)]
 pub struct IgnoreEventHttpModel {
     pub level: String,

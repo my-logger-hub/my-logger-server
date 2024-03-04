@@ -32,4 +32,11 @@ impl SettingsRepo {
             .await
             .unwrap();
     }
+
+    pub async fn delete_ignore_event(&self, model: &IgnoreWhereModel) {
+        self.sqlite
+            .delete_db_entity(TABLE_NAME, model)
+            .await
+            .unwrap();
+    }
 }
