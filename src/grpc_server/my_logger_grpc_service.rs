@@ -4,6 +4,7 @@ use std::time::Duration;
 use super::server::GrpcService;
 use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
+use crate::repo::dto::IgnoreWhereModel;
 
 use my_grpc_extensions::server::generate_server_stream;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
@@ -129,6 +130,43 @@ impl MyLogger for GrpcService {
         }
 
         Ok(tonic::Response::new(result))
+    }
+
+    async fn set_ignore_event(
+        &self,
+        request: tonic::Request<IgnoreEventGrpcModel>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let request = request.into_inner();
+        crate::flows::add_ignore_event(&self.app, request.into()).await;
+        return Ok(tonic::Response::new(()));
+    }
+
+    generate_server_stream!(stream_name:"GetIgnoreEventsStream", item_name:"IgnoreEventGrpcModel");
+
+    async fn get_ignore_events(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<Self::GetIgnoreEventsStream>, tonic::Status> {
+        let response = self.app.settings_repo.get_ignore_events().await;
+        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), |dto| dto.into())
+            .await
+    }
+
+    async fn delete_ignore_event(
+        &self,
+        request: tonic::Request<IgnoreEventGrpcModel>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let request = request.into_inner();
+        crate::flows::remove_ignore_event(
+            &self.app,
+            IgnoreWhereModel {
+                level: request.level().into(),
+                application: request.application,
+                marker: request.marker,
+            },
+        )
+        .await;
+        return Ok(tonic::Response::new(()));
     }
 
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {

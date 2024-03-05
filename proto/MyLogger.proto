@@ -55,10 +55,21 @@ message StatisticData{
     int32 DebugCount = 5;
 }
 
+message IgnoreEventGrpcModel{
+    LogLevelGrpcModel Level = 1;
+    string Application = 2;
+    string Marker = 3;
+}
+
 
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
     rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
     rpc GetStatistic(GetStatisticsRequest) returns (StatisticData);
+
+    rpc SetIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
+    rpc GetIgnoreEvents(google.protobuf.Empty) returns (stream IgnoreEventGrpcModel);
+    rpc DeleteIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
+
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }

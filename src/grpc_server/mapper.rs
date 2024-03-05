@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::{my_logger_grpc::*, repo::dto::LogItemDto};
+use crate::{
+    my_logger_grpc::*,
+    repo::dto::{IgnoreItemDto, LogItemDto},
+};
 
 impl Into<crate::app::LogItem> for LogEventGrpcModel {
     fn into(self) -> crate::app::LogItem {
@@ -74,6 +77,27 @@ impl Into<LogEventGrpcModel> for LogItemDto {
                 .into_iter()
                 .map(|(key, value)| LogEventContext { key, value })
                 .collect(),
+        }
+    }
+}
+
+impl Into<IgnoreItemDto> for IgnoreEventGrpcModel {
+    fn into(self) -> IgnoreItemDto {
+        IgnoreItemDto {
+            level: self.level().into(),
+            application: self.application,
+            marker: self.marker,
+        }
+    }
+}
+
+impl Into<IgnoreEventGrpcModel> for IgnoreItemDto {
+    fn into(self) -> IgnoreEventGrpcModel {
+        let log_level_grpc: LogLevelGrpcModel = self.level.into();
+        IgnoreEventGrpcModel {
+            application: self.application,
+            marker: self.marker,
+            level: log_level_grpc as i32,
         }
     }
 }
