@@ -154,7 +154,7 @@ impl MyLogger for GrpcService {
 
     async fn delete_ignore_event(
         &self,
-        request: tonic::Request<IgnoreEventGrpcModel>,
+        request: tonic::Request<DeleteIgnoreEventGrpcRequest>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
         crate::flows::remove_ignore_event(

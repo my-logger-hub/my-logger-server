@@ -61,6 +61,12 @@ message IgnoreEventGrpcModel{
     string Marker = 3;
 }
 
+message DeleteIgnoreEventGrpcRequest{
+    LogLevelGrpcModel Level = 1;
+    string Application = 2;
+    string Marker = 3;
+}
+
 
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
@@ -69,7 +75,7 @@ service MyLogger {
 
     rpc SetIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
     rpc GetIgnoreEvents(google.protobuf.Empty) returns (stream IgnoreEventGrpcModel);
-    rpc DeleteIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
+    rpc DeleteIgnoreEvent(DeleteIgnoreEventGrpcRequest) returns (google.protobuf.Empty);
 
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }
