@@ -76,4 +76,13 @@ impl LogsRepo {
             .await
             .unwrap()
     }
+
+    pub async fn gc(&self, tenant: &str, to_date: DateTimeAsMicroseconds) {
+        let where_model = DeleteWhereModel { tenant, to_date };
+
+        self.sqlite
+            .delete_db_entity(TABLE_NAME, &where_model)
+            .await
+            .unwrap()
+    }
 }

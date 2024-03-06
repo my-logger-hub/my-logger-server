@@ -104,6 +104,14 @@ pub struct WhereModel<'s> {
 }
 
 #[derive(WhereDbModel)]
+pub struct DeleteWhereModel<'s> {
+    pub tenant: &'s str,
+    #[operator("<=")]
+    #[sql_type("timestamp")]
+    pub to_date: DateTimeAsMicroseconds,
+}
+
+#[derive(WhereDbModel)]
 pub struct WhereStatisticsModel<'s> {
     pub tenant: &'s str,
     #[sql_type("timestamp")]
