@@ -112,6 +112,16 @@ pub struct DeleteWhereModel<'s> {
 }
 
 #[derive(WhereDbModel)]
+pub struct DeleteLevelWhereModel<'s> {
+    pub tenant: &'s str,
+    #[operator("<=")]
+    #[sql_type("timestamp")]
+    pub to_date: DateTimeAsMicroseconds,
+
+    pub level: LogLevelDto,
+}
+
+#[derive(WhereDbModel)]
 pub struct WhereStatisticsModel<'s> {
     pub tenant: &'s str,
     #[sql_type("timestamp")]

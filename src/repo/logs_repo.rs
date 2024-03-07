@@ -85,4 +85,22 @@ impl LogsRepo {
             .await
             .unwrap()
     }
+
+    pub async fn gc_level(
+        &self,
+        tenant: &str,
+        to_date: DateTimeAsMicroseconds,
+        level: LogLevelDto,
+    ) {
+        let where_model = DeleteLevelWhereModel {
+            tenant,
+            to_date,
+            level,
+        };
+
+        self.sqlite
+            .delete_db_entity(TABLE_NAME, &where_model)
+            .await
+            .unwrap()
+    }
 }
