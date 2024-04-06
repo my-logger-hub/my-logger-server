@@ -23,10 +23,11 @@ impl SeqInputHttpData {
                 Ok(log_data) => {
                     result.add(log_data);
                 }
-                Err(_) => {
+                Err(err) => {
                     println!(
-                        "Failed to parse log data: {}",
-                        std::str::from_utf8(chunk).unwrap()
+                        "Failed to parse log data: {}. Err:{}",
+                        std::str::from_utf8(chunk).unwrap(),
+                        err
                     );
                 }
             }
