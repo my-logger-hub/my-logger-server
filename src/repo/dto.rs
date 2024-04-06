@@ -167,6 +167,10 @@ impl IgnoreItemDto {
             return false;
         }
 
+        if self.marker.as_str() == "*" {
+            return true;
+        }
+
         log_event.has_entry(self.marker.as_str())
     }
 }
