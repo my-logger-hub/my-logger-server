@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use my_http_server::{macros::MyHttpInput, types::RawData};
 use my_logger::LogLevel;
-use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec};
+use rust_extensions::{
+    array_of_bytes_iterator::SliceIterator, date_time::DateTimeAsMicroseconds, lazy::LazyVec,
+};
 
 use crate::app::LogItem;
 
@@ -45,27 +47,27 @@ impl LogItem {
 
         let mut message = None;
 
-        for first_line in my_json::json_reader::JsonFirstLineReader::new(bytes) {
-            let first_line = first_line.map_err(|_| format!("Failed to parse json at all"))?;
+        let mut json_first_line_reader: my_json::json_reader::JsonFirstLineReader<SliceIterator> =
+            bytes.into();
 
-            let name = first_line
-                .get_name()
+        while let Some(line) = json_first_line_reader.get_next() {
+            let line = line.map_err(|_| format!("Failed to parse json at all"))?;
+
+            let name = line
+                .name
+                .as_unescaped_name(&json_first_line_reader)
                 .map_err(|_| "Can not read json name from param".to_string())?;
 
-            let value = first_line
-                .get_value()
-                .map_err(|_| format!("Can not read json value for param '{}'", name))?;
-
-            let value = value.as_str();
-
-            if value.is_none() {
+            if line.value.is_null(&json_first_line_reader) {
                 continue;
             }
 
-            let value = value.unwrap();
-
             match name {
-                "@l" => match value {
+                "@l" => match line
+                    .value
+                    .as_unescaped_str(&json_first_line_reader)
+                    .unwrap()
+                {
                     "Info" => {
                         level = LogLevel::Info;
                     }
@@ -81,16 +83,35 @@ impl LogItem {
                     _ => {}
                 },
                 "@t" => {
+                    let value = line
+                        .value
+                        .as_unescaped_str(&json_first_line_reader)
+                        .unwrap();
                     timestamp = DateTimeAsMicroseconds::from_str(value);
                 }
                 "Process" => {
-                    process = Some(value.to_string());
+                    let value = line
+                        .value
+                        .as_str(&json_first_line_reader)
+                        .unwrap()
+                        .to_string();
+                    process = Some(value);
                 }
                 "@m" => {
-                    message = Some(value.to_string());
+                    let value = line
+                        .value
+                        .as_str(&json_first_line_reader)
+                        .unwrap()
+                        .to_string();
+                    message = Some(value);
                 }
                 _ => {
-                    ctx.insert(name.to_string(), value.to_string());
+                    let value = line
+                        .value
+                        .as_str(&json_first_line_reader)
+                        .unwrap()
+                        .to_string();
+                    ctx.insert(name.to_string(), value);
                 }
             }
         }
