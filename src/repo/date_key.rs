@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct};
 
@@ -25,13 +25,13 @@ impl DateKey {
     pub fn get_keys_to_request(
         mut from: DateTimeAsMicroseconds,
         to: DateTimeAsMicroseconds,
-    ) -> Vec<Self> {
+    ) -> BTreeMap<Self, ()> {
         let to_key = Self::new(to);
         let mut current = Self::new(from);
 
-        let mut result = vec![];
+        let mut result = BTreeMap::new();
         while current <= to_key {
-            result.push(current);
+            result.insert(current, ());
             from = from.add(Duration::from_secs(60 * 60));
             current = Self::new(from);
         }

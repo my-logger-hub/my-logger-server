@@ -141,8 +141,8 @@ impl LogsRepo {
 
         let mut result = Vec::new();
 
-        for date_key in files {
-            let sqlite = self.get_sqlite(tenant, date_key).await;
+        for date_key in files.keys().rev() {
+            let sqlite = self.get_sqlite(tenant, *date_key).await;
             if let Some(sqlite) = sqlite {
                 let items = sqlite.query_rows(TABLE_NAME, Some(&where_model)).await;
 
@@ -153,6 +153,10 @@ impl LogsRepo {
                     Err(e) => {
                         println!("Error: {:?}", e);
                     }
+                }
+
+                if result.len() >= take {
+                    break;
                 }
             }
         }
