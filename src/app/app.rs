@@ -23,8 +23,8 @@ pub const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 impl AppContext {
     pub async fn new(settings_reader: Arc<crate::settings::SettingsReader>) -> Self {
-        let logs_db_path = settings_reader.get_logs_db_path("logs.db").await;
-        let settings_db_path = settings_reader.get_logs_db_path("settings.db").await;
+        let logs_db_path = settings_reader.get_logs_db_path(None).await;
+        let settings_db_path = settings_reader.get_logs_db_path("settings.db".into()).await;
         Self {
             app_states: Arc::new(AppStates::create_initialized()),
             logs_repo: LogsRepo::new(logs_db_path).await,

@@ -29,7 +29,7 @@ impl SettingsReader {
         read_access.telegram_settings.clone()
     }
 
-    pub async fn get_logs_db_path(&self, file_name: &str) -> String {
+    pub async fn get_logs_db_path(&self, file_name: Option<&str>) -> String {
         let read_access = self.settings.read().await;
 
         let mut result = if read_access.logs_db_path.starts_with("~") {
@@ -44,7 +44,9 @@ impl SettingsReader {
             result.push('/')
         }
 
-        result.push_str(file_name);
+        if let Some(file_name) = file_name {
+            result.push_str(file_name);
+        }
 
         result
     }
