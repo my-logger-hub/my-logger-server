@@ -32,7 +32,7 @@ impl LogsRepo {
         }
     }
 
-    fn compile_file_path(&self, tenant: &str, date_key: DateKey) -> String {
+    fn compile_file_name(&self, tenant: &str, date_key: DateKey) -> String {
         let mut path = self.path.clone();
         path.push_str(&tenant);
         path.push('-');
@@ -57,7 +57,9 @@ impl LogsRepo {
             return result.clone();
         }
 
-        let path = self.compile_file_path(tenant, date_key);
+        let path = self.compile_file_name(tenant, date_key);
+
+        println!("Creating new instance: {}", path);
 
         let sqlite = SqlLiteConnectionBuilder::new(path)
             .create_table_if_no_exists::<LogItemDto>(TABLE_NAME)
@@ -73,10 +75,32 @@ impl LogsRepo {
     }
 
     async fn get_sqlite(&self, tenant: &str, date_key: DateKey) -> Option<Arc<SqlLiteConnection>> {
-        let pool = self.sqlite_pool.lock().await;
+        let mut pool = self.sqlite_pool.lock().await;
 
-        let by_tenant = pool.get(tenant)?;
-        by_tenant.get(&date_key).cloned()
+        let by_tenant = pool.get_mut(tenant)?;
+        if let Some(instance) = by_tenant.get(&date_key) {
+            return Some(instance.clone());
+        }
+
+        let file = self.compile_file_name(tenant, date_key);
+
+        {
+            if tokio::fs::metadata(file.as_str()).await.is_err() {
+                return None;
+            }
+        }
+
+        println!("Opening existing instance: {}", file);
+        let sqlite = SqlLiteConnectionBuilder::new(file)
+            .create_table_if_no_exists::<LogItemDto>(TABLE_NAME)
+            .build()
+            .await
+            .unwrap();
+
+        let sqlite = Arc::new(sqlite);
+        by_tenant.insert(date_key, sqlite.clone());
+
+        Some(sqlite)
     }
 
     async fn get_last_sqlite(&self, tenant: &str) -> Option<Arc<SqlLiteConnection>> {
@@ -175,8 +199,7 @@ impl LogsRepo {
         Vec::new()
     }
 
-    pub async fn gc(&self, to_date: DateTimeAsMicroseconds) -> HashMap<String, Vec<DateKey>> {
-        /*
+    pub async fn get_files(&self) -> Vec<String> {
         let mut files = Vec::new();
 
         {
@@ -190,8 +213,11 @@ impl LogsRepo {
                 }
             }
         }
-         */
 
+        files
+    }
+
+    pub async fn gc(&self, to_date: DateTimeAsMicroseconds) -> HashMap<String, Vec<DateKey>> {
         let gc_from = DateKey::new(to_date);
 
         let mut read_access = self.sqlite_pool.lock().await;

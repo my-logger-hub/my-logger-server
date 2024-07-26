@@ -33,7 +33,7 @@ async fn main() {
     my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
     my_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
-    let mut gc_timer = MyTimer::new(Duration::from_secs(10));
+    let mut gc_timer = MyTimer::new(Duration::from_secs(30));
     gc_timer.register_timer("GcTimer", Arc::new(GcTimer::new(app.clone()).await));
     gc_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 

@@ -46,5 +46,13 @@ impl MyTimerTick for GcTimer {
                 crate::repo::dto::LogLevelDto::Warning,
             )
             .await;
+
+        gc_files(&self.app).await;
     }
+}
+
+async fn gc_files(app: &AppContext) {
+    let files = app.logs_repo.get_files().await;
+
+    println!("Files: {:#?}", files);
 }
