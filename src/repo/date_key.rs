@@ -23,19 +23,20 @@ impl DateKey {
     }
 
     pub fn get_keys_to_request(
-        from: DateTimeAsMicroseconds,
+        mut from: DateTimeAsMicroseconds,
         to: DateTimeAsMicroseconds,
     ) -> Vec<Self> {
-        let from_key = Self::new(from);
         let to_key = Self::new(to);
+        let mut current = Self::new(from);
 
-        if from_key.0 == to_key.0 {
-            return vec![from_key];
+        let mut result = vec![];
+        while current <= to_key {
+            result.push(current);
+            from = from.add(Duration::from_secs(60 * 60));
+            current = Self::new(from);
         }
 
-        let next_date = from.add(Duration::from_secs(60 * 60));
-
-        vec![from_key, Self::new(next_date)]
+        result
     }
 }
 
