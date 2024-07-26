@@ -1,10 +1,13 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap, VecDeque},
+    sync::Arc,
+};
 
 use rust_extensions::MyTimerTick;
 
 use crate::{
     app::{AppContext, LogItem},
-    repo::dto::LogItemDto,
+    repo::{dto::LogItemDto, DateKey},
 };
 
 pub struct FlushToDbTimer {
@@ -57,14 +60,32 @@ impl MyTimerTick for FlushToDbTimer {
         while let Some(items) = self.app.logs_queue.get(1000).await {
             self.send_to_telegram_if_needed(&items).await;
 
-            let items = items
-                .into_iter()
-                .map(|item| item.into())
-                .collect::<Vec<_>>();
+            let mut to_upload: HashMap<String, BTreeMap<DateKey, Vec<LogItemDto>>> = HashMap::new();
 
-            println!("Found items to upload: {}", items.len());
+            for item in items {
+                let date_key = DateKey::new(item.timestamp);
 
-            self.app.logs_repo.upload(items.as_slice()).await;
+                if !to_upload.contains_key(&item.tenant) {
+                    to_upload.insert(item.tenant.to_string(), BTreeMap::new());
+                }
+
+                let by_tenant = to_upload.get_mut(&item.tenant).unwrap();
+
+                if by_tenant.contains_key(&date_key) {
+                    by_tenant.get_mut(&date_key).unwrap().push(item.into());
+                } else {
+                    by_tenant.insert(date_key, vec![item.into()]);
+                }
+            }
+
+            for (tenant, items) in to_upload {
+                for (date_key, items) in items {
+                    self.app
+                        .logs_repo
+                        .upload(tenant.as_str(), date_key, items.as_slice())
+                        .await;
+                }
+            }
         }
     }
 }

@@ -22,7 +22,7 @@ impl MyTimerTick for GcTimer {
         let mut to_date = DateTimeAsMicroseconds::now();
         to_date.add_days(-1);
 
-        self.app.logs_repo.gc(&self.tenant, to_date).await;
+        self.app.logs_repo.gc(to_date).await;
 
         let mut to_date = DateTimeAsMicroseconds::now();
         to_date.add_minutes(-10);

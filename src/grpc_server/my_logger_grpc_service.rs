@@ -93,19 +93,16 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<StatisticData>, tonic::Status> {
         let request = request.into_inner();
 
-        let from_date = DateTimeAsMicroseconds::new(request.from_time);
+        /*
+               let from_date = DateTimeAsMicroseconds::new(request.from_time);
 
-        let to_date = if request.to_time > 0 {
-            Some(DateTimeAsMicroseconds::new(request.to_time))
-        } else {
-            None
-        };
-
-        let response = self
-            .app
-            .logs_repo
-            .get_statistics(&request.tenant_id, from_date, to_date)
-            .await;
+               let to_date = if request.to_time > 0 {
+                   Some(DateTimeAsMicroseconds::new(request.to_time))
+               } else {
+                   None
+               };
+        */
+        let response = self.app.logs_repo.get_statistics(&request.tenant_id).await;
 
         let mut result = StatisticData {
             info_count: 0,

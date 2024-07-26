@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use my_logger::LogLevel;
-use rust_extensions::date_time::DateTimeAsMicroseconds;
+use rust_extensions::{date_time::DateTimeAsMicroseconds, sorted_vec::EntityWithStrKey};
 
 use crate::repo::dto::LogLevelDto;
 
@@ -83,5 +83,11 @@ impl LogsQueue {
             result.push_back(item);
         }
         Some(result)
+    }
+}
+
+impl EntityWithStrKey for LogItem {
+    fn get_key(&self) -> &str {
+        &self.tenant
     }
 }
