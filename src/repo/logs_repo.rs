@@ -137,6 +137,8 @@ impl LogsRepo {
             to_date.unwrap_or(DateTimeAsMicroseconds::now()),
         );
 
+        println!("Files to request: {:?}", files);
+
         let mut result = Vec::new();
 
         for date_key in files {
