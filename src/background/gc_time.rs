@@ -81,12 +81,21 @@ async fn gc_files(app: &AppContext) {
         }
     }
 
-    for (date_ke, tenant) in to_gc {
+    for (date_key, tenant) in to_gc {
         println!(
-            "File would be GC: {:?} with date_key {}",
+            "Doing GC for tenant {} with date_key {}",
             tenant,
-            date_ke.get_value()
+            date_key.get_value()
         );
+
+        let file_name = app.logs_repo.compile_file_name(&tenant, date_key);
+        app.logs_repo.prepare_to_delete(tenant, date_key).await;
+
+        let result = tokio::fs::remove_file(file_name.as_str()).await;
+
+        if let Err(err) = result {
+            panic!("Can not delete file {}. Err: {}", file_name, err);
+        }
     }
 }
 
