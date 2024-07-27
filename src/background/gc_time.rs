@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use rust_extensions::{date_time::DateTimeAsMicroseconds, str_utils::StrUtils, MyTimerTick};
 
@@ -61,6 +61,7 @@ async fn gc_files(app: &AppContext) {
     let gc_date_key = DateTimeAsMicroseconds::now().sub(gc_from);
     let gc_date_key: DateKey = gc_date_key.into();
 
+    let mut to_gc = BTreeMap::new();
     for file_name in files {
         let file_to_process = check_if_file_name_with_logs(&file_name);
         if file_to_process.is_none() {
@@ -76,12 +77,16 @@ async fn gc_files(app: &AppContext) {
         let (tenant, date_key) = file_to_process.unwrap();
 
         if date_key <= gc_date_key {
-            println!(
-                "File would be GC: {:?} with date_key {}",
-                tenant,
-                date_key.get_value()
-            );
+            to_gc.insert(date_key, tenant);
         }
+    }
+
+    for (date_ke, tenant) in to_gc {
+        println!(
+            "File would be GC: {:?} with date_key {}",
+            tenant,
+            date_ke.get_value()
+        );
     }
 }
 
