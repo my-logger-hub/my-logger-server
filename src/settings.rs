@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -19,6 +21,8 @@ pub struct SettingsModel {
     #[serde(rename = "LogsDbPath")]
     pub logs_db_path: String,
 
+    pub hours_to_gc: u64,
+
     #[serde(rename = "TelegramSettings")]
     pub telegram_settings: Option<TelegramSettings>,
 }
@@ -27,6 +31,11 @@ impl SettingsReader {
     pub async fn get_telegram_settings(&self) -> Option<TelegramSettings> {
         let read_access = self.settings.read().await;
         read_access.telegram_settings.clone()
+    }
+
+    pub async fn get_duration_to_gc(&self) -> Duration {
+        let read_access = self.settings.read().await;
+        Duration::from_secs(60 * 60 * read_access.hours_to_gc as u64)
     }
 
     pub async fn get_logs_db_path(&self, file_name: Option<&str>) -> String {

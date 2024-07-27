@@ -10,12 +10,16 @@ impl DateKey {
     pub fn new(now: DateTimeAsMicroseconds) -> Self {
         let itm: DateTimeStruct = now.into();
 
-        Self(
-            itm.year as i64 * 1000000
-                + itm.month as i64 * 10000
-                + itm.day as i64 * 100
-                + itm.time.hour as i64,
+        Self::from_components(
+            itm.year as i64,
+            itm.month as i64,
+            itm.day as i64,
+            itm.time.hour as i64,
         )
+    }
+
+    fn from_components(year: i64, month: i64, day: i64, hour: i64) -> Self {
+        Self(year * 1000000 + month * 10000 + day * 100 + hour)
     }
 
     pub fn get_value(&self) -> i64 {
@@ -37,6 +41,18 @@ impl DateKey {
         }
 
         result
+    }
+
+    pub fn parse_from_str(value: &str) -> Option<Self> {
+        if value.len() != 10 {
+            return None;
+        }
+
+        let year = value[0..4].parse::<i64>().ok()?;
+        let month = value[4..6].parse::<i64>().ok()?;
+        let day = value[6..8].parse::<i64>().ok()?;
+        let hour = value[8..10].parse::<i64>().ok()?;
+        Some(Self::from_components(year, month, day, hour))
     }
 }
 
