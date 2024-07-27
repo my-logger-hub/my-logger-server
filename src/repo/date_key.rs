@@ -61,3 +61,9 @@ impl From<i64> for DateKey {
         Self(value)
     }
 }
+
+impl From<DateTimeAsMicroseconds> for DateKey {
+    fn from(value: DateTimeAsMicroseconds) -> Self {
+        Self::new(value)
+    }
+}
