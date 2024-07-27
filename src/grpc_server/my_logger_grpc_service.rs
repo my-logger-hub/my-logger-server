@@ -83,8 +83,12 @@ impl MyLogger for GrpcService {
             )
             .await;
 
-        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), |dto| dto.into())
-            .await
+        let tenant_id = request.tenant_id;
+
+        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
+            super::mapper::to_log_event_grpc_model(tenant_id.to_string(), dto)
+        })
+        .await
     }
 
     async fn get_statistic(

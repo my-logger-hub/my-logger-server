@@ -6,13 +6,11 @@ use crate::{app::AppContext, repo::DateKey};
 
 pub struct GcTimer {
     pub app: Arc<AppContext>,
-    pub tenant: String,
 }
 
 impl GcTimer {
     pub async fn new(app: Arc<AppContext>) -> Self {
-        let tenant = app.settings_reader.get_default_tenant().await;
-        Self { app, tenant }
+        Self { app }
     }
 }
 
@@ -28,11 +26,11 @@ impl MyTimerTick for GcTimer {
         to_date.add_minutes(-10);
         self.app
             .logs_repo
-            .gc_level(&self.tenant, to_date, crate::repo::dto::LogLevelDto::Debug)
+            .gc_level(to_date, crate::repo::dto::LogLevelDto::Debug)
             .await;
         self.app
             .logs_repo
-            .gc_level(&self.tenant, to_date, crate::repo::dto::LogLevelDto::Info)
+            .gc_level(to_date, crate::repo::dto::LogLevelDto::Info)
             .await;
 
         let mut to_date = DateTimeAsMicroseconds::now();
@@ -40,11 +38,7 @@ impl MyTimerTick for GcTimer {
 
         self.app
             .logs_repo
-            .gc_level(
-                &self.tenant,
-                to_date,
-                crate::repo::dto::LogLevelDto::Warning,
-            )
+            .gc_level(to_date, crate::repo::dto::LogLevelDto::Warning)
             .await;
 
         gc_files(&self.app).await;

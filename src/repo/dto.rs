@@ -68,8 +68,6 @@ impl Into<LogLevelDto> for LogLevel {
 #[derive(TableSchema, InsertDbEntity, SelectDbEntity, Debug)]
 pub struct LogItemDto {
     #[primary_key(0)]
-    pub tenant: String,
-    #[primary_key(1)]
     #[sql_type("timestamp")]
     #[order_by_desc]
     pub moment: DateTimeAsMicroseconds,
@@ -83,8 +81,7 @@ pub struct LogItemDto {
 }
 
 #[derive(WhereDbModel)]
-pub struct WhereModel<'s> {
-    pub tenant: &'s str,
+pub struct WhereModel {
     #[sql_type("timestamp")]
     #[db_column_name("moment")]
     #[operator(">=")]
@@ -104,16 +101,14 @@ pub struct WhereModel<'s> {
 }
 
 #[derive(WhereDbModel)]
-pub struct DeleteWhereModel<'s> {
-    pub tenant: &'s str,
+pub struct DeleteWhereModel {
     #[operator("<=")]
     #[sql_type("timestamp")]
     pub to_date: DateTimeAsMicroseconds,
 }
 
 #[derive(WhereDbModel)]
-pub struct DeleteLevelWhereModel<'s> {
-    pub tenant: &'s str,
+pub struct DeleteLevelWhereModel {
     #[operator("<=")]
     #[sql_type("timestamp")]
     pub to_date: DateTimeAsMicroseconds,
@@ -122,8 +117,7 @@ pub struct DeleteLevelWhereModel<'s> {
 }
 
 #[derive(WhereDbModel)]
-pub struct WhereStatisticsModel<'s> {
-    pub tenant: &'s str,
+pub struct WhereStatisticsModel {
     #[sql_type("timestamp")]
     #[db_column_name("moment")]
     #[operator(">=")]

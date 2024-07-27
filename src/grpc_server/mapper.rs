@@ -63,21 +63,19 @@ impl Into<LogLevelGrpcModel> for crate::repo::dto::LogLevelDto {
     }
 }
 
-impl Into<LogEventGrpcModel> for LogItemDto {
-    fn into(self) -> LogEventGrpcModel {
-        let log_level_grpc: LogLevelGrpcModel = self.level.into();
-        LogEventGrpcModel {
-            tenant_id: self.tenant,
-            timestamp: self.moment.unix_microseconds,
-            process_name: self.process,
-            message: self.message,
-            level: log_level_grpc as i32,
-            ctx: self
-                .context
-                .into_iter()
-                .map(|(key, value)| LogEventContext { key, value })
-                .collect(),
-        }
+pub fn to_log_event_grpc_model(tenant: String, src: LogItemDto) -> LogEventGrpcModel {
+    let log_level_grpc: LogLevelGrpcModel = src.level.into();
+    LogEventGrpcModel {
+        tenant_id: tenant,
+        timestamp: src.moment.unix_microseconds,
+        process_name: src.process,
+        message: src.message,
+        level: log_level_grpc as i32,
+        ctx: src
+            .context
+            .into_iter()
+            .map(|(key, value)| LogEventContext { key, value })
+            .collect(),
     }
 }
 

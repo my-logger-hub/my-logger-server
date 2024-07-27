@@ -208,7 +208,6 @@ impl LogsRepo {
         take: usize,
     ) -> Vec<LogItemDto> {
         let where_model = WhereModel {
-            tenant,
             from_date,
             to_date,
             level: levels,
@@ -312,17 +311,8 @@ impl LogsRepo {
         result
     }
 
-    pub async fn gc_level(
-        &self,
-        tenant: &str,
-        to_date: DateTimeAsMicroseconds,
-        level: LogLevelDto,
-    ) {
-        let where_model = DeleteLevelWhereModel {
-            tenant,
-            to_date,
-            level,
-        };
+    pub async fn gc_level(&self, to_date: DateTimeAsMicroseconds, level: LogLevelDto) {
+        let where_model = DeleteLevelWhereModel { to_date, level };
 
         let last_and_before = self.get_last_and_before().await;
 
