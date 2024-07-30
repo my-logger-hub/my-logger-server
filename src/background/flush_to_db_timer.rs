@@ -6,7 +6,7 @@ use std::{
 use rust_extensions::MyTimerTick;
 
 use crate::{
-    app::{AppContext, LogItem},
+    app::{AppContext, LogItem, PROCESS_CONTEXT_KEY},
     repo::{dto::LogItemDto, DateKey},
 };
 
@@ -92,17 +92,17 @@ impl MyTimerTick for FlushToDbTimer {
 
 impl Into<LogItemDto> for LogItem {
     fn into(self) -> LogItemDto {
+        let mut context = self.ctx;
+        if let Some(process) = self.process {
+            context.insert(PROCESS_CONTEXT_KEY.to_string(), process);
+        }
+
         LogItemDto {
             id: self.id,
             level: self.level.into(),
-            process: if let Some(process) = self.process {
-                process
-            } else {
-                "".to_string()
-            },
             message: self.message,
             moment: self.timestamp,
-            context: self.ctx,
+            context,
         }
     }
 }

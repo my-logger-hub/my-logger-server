@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
+    app::PROCESS_CONTEXT_KEY,
     my_logger_grpc::*,
     repo::dto::{IgnoreItemDto, LogItemDto},
 };
@@ -63,12 +64,15 @@ impl Into<LogLevelGrpcModel> for crate::repo::dto::LogLevelDto {
     }
 }
 
-pub fn to_log_event_grpc_model(tenant: String, src: LogItemDto) -> LogEventGrpcModel {
+pub fn to_log_event_grpc_model(tenant: String, mut src: LogItemDto) -> LogEventGrpcModel {
     let log_level_grpc: LogLevelGrpcModel = src.level.into();
+
+    let process_name = src.context.remove(PROCESS_CONTEXT_KEY);
+
     LogEventGrpcModel {
         tenant_id: tenant,
         timestamp: src.moment.unix_microseconds,
-        process_name: src.process,
+        process_name: process_name.unwrap_or_default(),
         message: src.message,
         level: log_level_grpc as i32,
         ctx: src

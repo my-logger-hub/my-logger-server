@@ -9,6 +9,8 @@ use crate::{
 
 use super::LogsQueue;
 
+pub const PROCESS_CONTEXT_KEY: &'static str = "Process";
+
 pub struct AppContext {
     pub settings_reader: Arc<crate::settings::SettingsReader>,
     pub app_states: Arc<AppStates>,

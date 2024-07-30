@@ -73,7 +73,6 @@ pub struct LogItemDto {
     pub moment: DateTimeAsMicroseconds,
     #[db_index(id:0, index_name:"id_idx", is_unique:true, order:"ASC")]
     pub id: String,
-    pub process: String,
     pub level: LogLevelDto,
     pub message: String,
     #[sql_type("jsonb")]
