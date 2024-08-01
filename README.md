@@ -3,6 +3,7 @@ Settings example:
 ```rust
 DefaultTenant: Default
 LogsDbPath: /root/db
+hours_to_gc: 6
 IgnoreEvents:
 - level: Info
   application: app-name
