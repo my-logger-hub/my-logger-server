@@ -110,7 +110,7 @@ pub struct DeleteWhereModel {
 pub struct DeleteLevelWhereModel {
     #[operator("<=")]
     #[sql_type("timestamp")]
-    pub to_date: DateTimeAsMicroseconds,
+    pub moment: DateTimeAsMicroseconds,
 
     pub level: LogLevelDto,
 }

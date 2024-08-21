@@ -312,7 +312,10 @@ impl LogsRepo {
     }
 
     pub async fn gc_level(&self, to_date: DateTimeAsMicroseconds, level: LogLevelDto) {
-        let where_model = DeleteLevelWhereModel { to_date, level };
+        let where_model = DeleteLevelWhereModel {
+            moment: to_date,
+            level,
+        };
 
         let last_and_before = self.get_last_and_before().await;
 

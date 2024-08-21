@@ -23,7 +23,7 @@ impl MyTimerTick for GcTimer {
         self.app.logs_repo.gc(to_date).await;
 
         let mut to_date = DateTimeAsMicroseconds::now();
-        to_date.add_minutes(-10);
+        to_date.add_minutes(-60);
         self.app
             .logs_repo
             .gc_level(to_date, crate::repo::dto::LogLevelDto::Debug)
