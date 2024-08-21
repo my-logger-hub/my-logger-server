@@ -34,13 +34,13 @@ pub async fn send_log_item(telegram_settings: &TelegramSettings, log_item: &LogI
         (
             "text",
             format!(
-                "---\n{}\n{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```Context:\n{:#?}\n```\n",
+                "---\n{}\n{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```Context:\n{}\n```\n",
                 log_item.timestamp.to_rfc3339(),
                 log_item_level_to_telegram_str(&log_item),
-                telegram_settings.env_info,
-                process,
-                log_item.message,
-                log_item.ctx
+                format_telegram_message(&telegram_settings.env_info),
+                format_telegram_message(&process),
+                format_telegram_message(&log_item.message),
+                format_code_telegram_message(format!("{:#?}", log_item.ctx))
             ),
         ),
     ];
@@ -60,4 +60,95 @@ pub async fn send_log_item(telegram_settings: &TelegramSettings, log_item: &LogI
     //let telegram_response: TelegramResponse = response.json().await?;
 
     // Return the telegram response
+}
+
+fn format_telegram_message(src: &str) -> String {
+    let mut result = String::new();
+
+    for c in src.chars() {
+        if c <= ' ' {
+            result.push(' ');
+        } else {
+            match c {
+                '_' => {
+                    result.push_str("\\_");
+                }
+                '*' => {
+                    result.push_str("\\*");
+                }
+                '[' => {
+                    result.push_str("\\[");
+                }
+                ']' => {
+                    result.push_str("\\]");
+                }
+                '(' => {
+                    result.push_str("\\(");
+                }
+                ')' => {
+                    result.push_str("\\)");
+                }
+                '~' => {
+                    result.push_str("\\~");
+                }
+                '`' => {
+                    result.push_str("\\`");
+                }
+                '>' => {
+                    result.push_str("\\>");
+                }
+                '#' => {
+                    result.push_str("\\#");
+                }
+                '+' => {
+                    result.push_str("\\+");
+                }
+                '-' => {
+                    result.push_str("\\-");
+                }
+                '=' => {
+                    result.push_str("\\=");
+                }
+                '|' => {
+                    result.push_str("\\|");
+                }
+                '{' => {
+                    result.push_str("\\{");
+                }
+                '}' => {
+                    result.push_str("\\}");
+                }
+                '.' => {
+                    result.push_str("\\.");
+                }
+                '!' => {
+                    result.push_str("\\!");
+                }
+                _ => {
+                    result.push(c);
+                }
+            }
+        }
+    }
+
+    result
+}
+
+fn format_code_telegram_message(src: String) -> String {
+    let mut result = String::new();
+
+    for c in src.chars() {
+        match c {
+            '`' => {
+                result.push_str("\\`");
+            }
+            '_' => {
+                result.push_str("\\_");
+            }
+            _ => {
+                result.push(c);
+            }
+        }
+    }
+    result
 }

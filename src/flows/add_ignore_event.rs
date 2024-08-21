@@ -35,7 +35,7 @@ pub async fn add_ignore_event(app: &AppContext, event: IgnoreItemDto) {
                 tenant: "System".to_string(),
                 level: my_logger::LogLevel::Info,
                 process: None,
-                message: "Ignore event added".to_string(),
+                message: "Ignore event is added".to_string(),
                 timestamp: dt,
                 ctx,
             },
