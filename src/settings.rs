@@ -10,6 +10,12 @@ pub struct TelegramSettings {
     pub env_info: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ElasticSettings {
+    pub esecure: String,
+    pub url: String,
+}
+
 #[derive(my_settings_reader::SettingsModel, Serialize, Deserialize, Debug, Clone)]
 pub struct SettingsModel {
     #[serde(rename = "DefaultTenant")]
@@ -25,12 +31,20 @@ pub struct SettingsModel {
 
     #[serde(rename = "TelegramSettings")]
     pub telegram_settings: Option<TelegramSettings>,
+    
+    #[serde(rename = "TelegramSettings")]
+    pub elastic: Option<ElasticSettings>,
 }
 
 impl SettingsReader {
     pub async fn get_telegram_settings(&self) -> Option<TelegramSettings> {
         let read_access = self.settings.read().await;
         read_access.telegram_settings.clone()
+    }
+
+    pub async fn get_elastic_settings(&self) -> Option<ElasticSettings> {
+        let read_access = self.settings.read().await;
+        read_access.elastic.clone()
     }
 
     pub async fn get_duration_to_gc(&self) -> Duration {

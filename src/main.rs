@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use app::AppContext;
-use background::{FlushToDbTimer, GcTimer};
+use background::{FlushToDbTimer, FlushToElastic, GcTimer};
 use rust_extensions::MyTimer;
 
 mod app;
@@ -31,6 +31,7 @@ async fn main() {
 
     let mut my_timer = MyTimer::new(Duration::from_millis(500));
     my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
+    my_timer.register_timer("ToElasticFlusher", Arc::new(FlushToElastic::new(app.clone())));
     my_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
     let mut gc_timer = MyTimer::new(Duration::from_secs(30));
