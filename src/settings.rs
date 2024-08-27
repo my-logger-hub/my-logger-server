@@ -32,7 +32,7 @@ pub struct SettingsModel {
     #[serde(rename = "TelegramSettings")]
     pub telegram_settings: Option<TelegramSettings>,
     
-    #[serde(rename = "TelegramSettings")]
+    #[serde(rename = "ElasticSettings")]
     pub elastic: Option<ElasticSettings>,
 }
 
