@@ -29,9 +29,9 @@ async fn main() {
 
     crate::http::start_up::setup_server(app.clone()).await;
 
-    let mut my_timer = MyTimer::new(Duration::from_millis(500));
-    my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
+    let mut my_timer = MyTimer::new(Duration::from_millis(1000));
     my_timer.register_timer("ToElasticFlusher", Arc::new(FlushToElastic::new(app.clone())));
+    my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
     my_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
     let mut gc_timer = MyTimer::new(Duration::from_secs(30));
