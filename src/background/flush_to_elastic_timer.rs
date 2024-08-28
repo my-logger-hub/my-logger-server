@@ -116,10 +116,16 @@ impl MyTimerTick for FlushToElastic {
                 init_elastic_log_index(elastic_client, index_name, &pattern).await;
             }
 
-            elastic_client
+            let response = elastic_client
                 .write_entities(index_name, &pattern, data_to_upload)
                 .await
                 .unwrap();
+
+            println!(
+                "Elastic write StatusCode: {};\nResponse: {:#?}",
+                response.status_code(),
+                response
+            );
         }
     }
 }
