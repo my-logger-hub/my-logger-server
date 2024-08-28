@@ -1,4 +1,4 @@
-use std::{os::unix::process, sync::Arc};
+use std::sync::Arc;
 
 use elastic_client::{ElasticClient, ElasticIndexRotationPattern};
 use rust_extensions::MyTimerTick;
@@ -84,14 +84,16 @@ impl ElasticLogModel {
 
 pub struct FlushToElastic {
     pub app: Arc<AppContext>,
+    pub env_source: String,
     last_created_index: Mutex<Option<String>>,
 }
 
 impl FlushToElastic {
-    pub fn new(app: Arc<AppContext>) -> Self {
+    pub fn new(app: Arc<AppContext>, env_source: &str) -> Self {
         Self {
             app,
             last_created_index: Mutex::new(None),
+            env_source: env_source.to_string(),
         }
     }
 }
@@ -108,7 +110,7 @@ impl MyTimerTick for FlushToElastic {
         };
 
         while let Some(items) = self.app.logs_queue.get_elastic(1000).await {
-            let index_name = "services_logs";
+            let index_name = &format!("services_logs_{}", self.env_source);
             let pattern = ElasticIndexRotationPattern::Day;
 
             let mut index = self.last_created_index.lock().await;
@@ -131,11 +133,7 @@ impl MyTimerTick for FlushToElastic {
                 .await
                 .unwrap();
 
-            println!(
-                "Elastic write StatusCode: {};\nResponse: {:#?}",
-                response.status_code(),
-                response
-            );
+            println!("elastic_status: {}", response.status_code(),);
         }
     }
 }

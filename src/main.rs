@@ -24,17 +24,25 @@ pub mod my_logger_grpc {
 async fn main() {
     let settings_reader = crate::settings::SettingsReader::new(".my-logger-server").await;
     let settings_reader = Arc::new(settings_reader);
-
+    let elastic_settings = settings_reader.get_elastic_settings().await;
     let app = Arc::new(AppContext::new(settings_reader).await);
 
     crate::http::start_up::setup_server(app.clone()).await;
 
+    if let Some(elastic_settings) = elastic_settings {
+        let mut elastic_timer = MyTimer::new(Duration::from_millis(500));
+        elastic_timer.register_timer(
+            "ToElasticFlusher",
+            Arc::new(FlushToElastic::new(
+                app.clone(),
+                &elastic_settings.env_source,
+            )),
+        );
+        elastic_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+    }
     let mut my_timer = MyTimer::new(Duration::from_millis(500));
-    let mut elastic_timer = MyTimer::new(Duration::from_millis(500));
     my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
-    elastic_timer.register_timer("ToElasticFlusher", Arc::new(FlushToElastic::new(app.clone())));
     my_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
-    elastic_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
     let mut gc_timer = MyTimer::new(Duration::from_secs(30));
     gc_timer.register_timer("GcTimer", Arc::new(GcTimer::new(app.clone()).await));

@@ -14,6 +14,7 @@ pub struct TelegramSettings {
 pub struct ElasticSettings {
     pub esecure: String,
     pub url: String,
+    pub env_source: String,
 }
 
 #[derive(my_settings_reader::SettingsModel, Serialize, Deserialize, Debug, Clone)]
