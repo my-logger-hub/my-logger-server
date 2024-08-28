@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use elastic_client::{ElasticClient, ElasticClientAuth};
 use rust_extensions::AppStates;
 
 use crate::{
@@ -18,6 +19,7 @@ pub struct AppContext {
     pub logs_queue: LogsQueue,
     pub settings_repo: SettingsRepo,
     pub filter_events_cache: FilterEventsCache,
+    pub elastic_client: Option<ElasticClient>,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -31,9 +33,16 @@ impl AppContext {
             app_states: Arc::new(AppStates::create_initialized()),
             logs_repo: LogsRepo::new(logs_db_path).await,
             logs_queue: LogsQueue::new(),
-            settings_reader,
             settings_repo: SettingsRepo::new(settings_db_path).await,
             filter_events_cache: FilterEventsCache::new(),
+            elastic_client: settings_reader.get_elastic_settings().await.map(|x| {
+                ElasticClient::new(ElasticClientAuth::SingleNode {
+                    url: x.url,
+                    esecure: Some(x.esecure),
+                })
+                .unwrap()
+            }),
+            settings_reader,
         }
     }
 }
