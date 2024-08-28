@@ -10,7 +10,7 @@ use crate::app::{AppContext, LogItem};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ElasticLogModel {
-    pub _id: String,
+    pub inner_id: String,
     pub date: i64,
     pub app: String,
     pub log_level: String,
@@ -24,7 +24,7 @@ impl ElasticLogModel {
         if let Some(process) = &value.process {
             if process.contains(AUTO_PANIC_HANDLER) {
                 let mut model = serde_json::to_value(ElasticLogModel {
-                    _id: value.id.clone(),
+                    inner_id: value.id.clone(),
                     env_source: value.tenant.to_uppercase(),
                     log_level: value.level.to_string().to_string(),
                     process: AUTO_PANIC_HANDLER.to_string(),
@@ -56,7 +56,7 @@ impl ElasticLogModel {
         }
 
         let mut model = serde_json::to_value(ElasticLogModel {
-            _id: value.id.clone(),
+            inner_id: value.id.clone(),
             env_source: value.tenant.to_uppercase(),
             log_level: value.level.to_string().to_string(),
             process: value.process.clone().unwrap_or("N/A".to_string()),
