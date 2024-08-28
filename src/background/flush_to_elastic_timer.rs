@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{os::unix::process, sync::Arc};
 
 use elastic_client::{ElasticClient, ElasticIndexRotationPattern};
 use rust_extensions::MyTimerTick;
@@ -34,6 +34,7 @@ impl FlushToElastic {
 }
 
 const APP_CONTEXT: &str = "Application";
+const AUTO_PANIC_HANDLER: &str = "Panic Handler";
 
 #[async_trait::async_trait]
 impl MyTimerTick for FlushToElastic {
@@ -46,6 +47,33 @@ impl MyTimerTick for FlushToElastic {
             let data_to_upload = items
                 .into_iter()
                 .map(|x| {
+                    if let Some(process) = &x.process {
+                        if process.contains(AUTO_PANIC_HANDLER) {
+                            let mut model = serde_json::to_value(ElasticLogModel {
+                                _id: x.id,
+                                env_source: x.tenant.to_uppercase(),
+                                log_level: x.level.to_string().to_string(),
+                                process: AUTO_PANIC_HANDLER.to_string(),
+                                message: "Auto panic handler".to_string(),
+                                date: x.timestamp.unix_microseconds / 1000,
+                                app: x.ctx.get(APP_CONTEXT).cloned().unwrap_or("N/A".to_string()),
+                            })
+                            .unwrap();
+
+                            if let serde_json::Value::Object(ref mut map) = model {
+                                for (key, value) in x.ctx {
+                                    if key != APP_CONTEXT {
+                                        map.insert(key, Value::String(value));
+                                    }
+                                }
+
+                                map.insert("Panic Message".to_string(), Value::String(x.message));
+                            }
+
+                            return model;
+                        }
+                    }
+
                     let mut model = serde_json::to_value(ElasticLogModel {
                         _id: x.id,
                         env_source: x.tenant.to_uppercase(),
