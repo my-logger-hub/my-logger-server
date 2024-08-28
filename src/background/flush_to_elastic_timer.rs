@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
-use crate::app::AppContext;
+use crate::app::{AppContext, LogItem};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ElasticLogModel {
@@ -17,6 +17,69 @@ pub struct ElasticLogModel {
     pub message: String,
     pub env_source: String,
     pub process: String,
+}
+
+impl ElasticLogModel {
+    pub fn from_log_into_to_json_value(value: &LogItem) -> serde_json::Value {
+        if let Some(process) = &value.process {
+            if process.contains(AUTO_PANIC_HANDLER) {
+                let mut model = serde_json::to_value(ElasticLogModel {
+                    _id: value.id.clone(),
+                    env_source: value.tenant.to_uppercase(),
+                    log_level: value.level.to_string().to_string(),
+                    process: AUTO_PANIC_HANDLER.to_string(),
+                    message: "Auto panic handler".to_string(),
+                    date: value.timestamp.unix_microseconds / 1000,
+                    app: value
+                        .ctx
+                        .get(APP_CONTEXT)
+                        .cloned()
+                        .unwrap_or("N/A".to_string()),
+                })
+                .unwrap();
+
+                if let serde_json::Value::Object(ref mut map) = model {
+                    for (key, value) in value.ctx.clone() {
+                        if key != APP_CONTEXT {
+                            map.insert(key, Value::String(value));
+                        }
+                    }
+
+                    map.insert(
+                        "Panic Message".to_string(),
+                        Value::String(value.message.clone()),
+                    );
+                }
+
+                return model;
+            }
+        }
+
+        let mut model = serde_json::to_value(ElasticLogModel {
+            _id: value.id.clone(),
+            env_source: value.tenant.to_uppercase(),
+            log_level: value.level.to_string().to_string(),
+            process: value.process.clone().unwrap_or("N/A".to_string()),
+            message: value.message.clone(),
+            date: value.timestamp.unix_microseconds / 1000,
+            app: value
+                .ctx
+                .get(APP_CONTEXT)
+                .cloned()
+                .unwrap_or("N/A".to_string()),
+        })
+        .unwrap();
+
+        if let serde_json::Value::Object(ref mut map) = model {
+            for (key, value) in value.ctx.clone() {
+                if key != APP_CONTEXT {
+                    map.insert(key, Value::String(value));
+                }
+            }
+        }
+
+        model
+    }
 }
 
 pub struct FlushToElastic {
@@ -44,60 +107,7 @@ impl MyTimerTick for FlushToElastic {
             return;
         };
 
-        while let Some(items) = self.app.logs_queue.get(1000).await {
-            let data_to_upload = items
-                .into_iter()
-                .map(|x| {
-                    if let Some(process) = &x.process {
-                        if process.contains(AUTO_PANIC_HANDLER) {
-                            let mut model = serde_json::to_value(ElasticLogModel {
-                                _id: x.id,
-                                env_source: x.tenant.to_uppercase(),
-                                log_level: x.level.to_string().to_string(),
-                                process: AUTO_PANIC_HANDLER.to_string(),
-                                message: "Auto panic handler".to_string(),
-                                date: x.timestamp.unix_microseconds / 1000,
-                                app: x.ctx.get(APP_CONTEXT).cloned().unwrap_or("N/A".to_string()),
-                            })
-                            .unwrap();
-
-                            if let serde_json::Value::Object(ref mut map) = model {
-                                for (key, value) in x.ctx {
-                                    if key != APP_CONTEXT {
-                                        map.insert(key, Value::String(value));
-                                    }
-                                }
-
-                                map.insert("Panic Message".to_string(), Value::String(x.message));
-                            }
-
-                            return model;
-                        }
-                    }
-
-                    let mut model = serde_json::to_value(ElasticLogModel {
-                        _id: x.id,
-                        env_source: x.tenant.to_uppercase(),
-                        log_level: x.level.to_string().to_string(),
-                        process: x.process.unwrap_or("N/A".to_string()),
-                        message: x.message,
-                        date: x.timestamp.unix_microseconds / 1000,
-                        app: x.ctx.get(APP_CONTEXT).cloned().unwrap_or("N/A".to_string()),
-                    })
-                    .unwrap();
-
-                    if let serde_json::Value::Object(ref mut map) = model {
-                        for (key, value) in x.ctx {
-                            if key != APP_CONTEXT {
-                                map.insert(key, Value::String(value));
-                            }
-                        }
-                    }
-
-                    model
-                })
-                .collect::<Vec<_>>();
-
+        while let Some(items) = self.app.logs_queue.get_elastic(1000).await {
             let index_name = "services_logs";
             let pattern = ElasticIndexRotationPattern::Day;
 
@@ -117,7 +127,7 @@ impl MyTimerTick for FlushToElastic {
             }
 
             let response = elastic_client
-                .write_entities(index_name, &pattern, data_to_upload)
+                .write_entities(index_name, &pattern, items.into_iter().collect())
                 .await
                 .unwrap();
 
