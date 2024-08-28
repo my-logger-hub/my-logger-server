@@ -40,6 +40,7 @@ const AUTO_PANIC_HANDLER: &str = "Panic Handler";
 impl MyTimerTick for FlushToElastic {
     async fn tick(&self) {
         let Some(elastic_client) = self.app.elastic_client.as_ref() else {
+            println!("Elastic client is not initialized");
             return;
         };
 
