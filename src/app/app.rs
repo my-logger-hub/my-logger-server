@@ -12,6 +12,11 @@ use super::LogsQueue;
 
 pub const PROCESS_CONTEXT_KEY: &'static str = "Process";
 
+pub struct ElasticInner {
+    pub client: ElasticClient,
+    pub logs_queue: LogsQueue,
+}
+
 pub struct AppContext {
     pub settings_reader: Arc<crate::settings::SettingsReader>,
     pub app_states: Arc<AppStates>,
@@ -19,7 +24,8 @@ pub struct AppContext {
     pub logs_queue: LogsQueue,
     pub settings_repo: SettingsRepo,
     pub filter_events_cache: FilterEventsCache,
-    pub elastic_client: Option<ElasticClient>,
+    pub elastic: Option<ElasticInner>,
+    pub is_debug: bool,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -29,20 +35,38 @@ impl AppContext {
     pub async fn new(settings_reader: Arc<crate::settings::SettingsReader>) -> Self {
         let logs_db_path = settings_reader.get_logs_db_path(None).await;
         let settings_db_path = settings_reader.get_logs_db_path("settings.db".into()).await;
+
+        let mut is_debug = false;
+
+        if let Ok(value) = std::env::var("DEBUG") {
+            if value == "true" {
+                is_debug = true;
+            }
+
+            if value == "1" {
+                is_debug = true;
+            }
+        }
+
         Self {
             app_states: Arc::new(AppStates::create_initialized()),
             logs_repo: LogsRepo::new(logs_db_path).await,
             logs_queue: LogsQueue::new(),
             settings_repo: SettingsRepo::new(settings_db_path).await,
             filter_events_cache: FilterEventsCache::new(),
-            elastic_client: settings_reader.get_elastic_settings().await.map(|x| {
-                ElasticClient::new(ElasticClientAuth::SingleNode {
-                    url: x.url,
-                    esecure: Some(x.esecure),
-                })
-                .unwrap()
-            }),
+            elastic: settings_reader
+                .get_elastic_settings()
+                .await
+                .map(|x| ElasticInner {
+                    logs_queue: LogsQueue::new(),
+                    client: ElasticClient::new(ElasticClientAuth::SingleNode {
+                        url: x.url,
+                        esecure: Some(x.esecure),
+                    })
+                    .unwrap(),
+                }),
             settings_reader,
+            is_debug,
         }
     }
 }

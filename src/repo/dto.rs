@@ -53,7 +53,7 @@ impl LogLevelDto {
     }
 }
 
-impl Into<LogLevelDto> for LogLevel {
+impl<'s> Into<LogLevelDto> for &'s LogLevel {
     fn into(self) -> LogLevelDto {
         match self {
             LogLevel::Info => LogLevelDto::Info,

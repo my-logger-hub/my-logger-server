@@ -1,9 +1,12 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 use my_logger::LogLevel;
 use rust_extensions::{date_time::DateTimeAsMicroseconds, sorted_vec::EntityWithStrKey};
 
-use crate::{background::ElasticLogModel, repo::dto::LogLevelDto};
+use crate::repo::dto::LogLevelDto;
 
 #[derive(Debug)]
 pub struct LogItem {
@@ -45,32 +48,18 @@ impl LogItem {
 }
 
 pub struct LogsQueue {
-    pub queue: tokio::sync::Mutex<Option<VecDeque<LogItem>>>,
-    pub elastic_queue: tokio::sync::Mutex<Option<VecDeque<serde_json::Value>>>,
+    pub queue: tokio::sync::Mutex<Option<VecDeque<Arc<LogItem>>>>,
 }
 
 impl LogsQueue {
     pub fn new() -> Self {
         Self {
             queue: tokio::sync::Mutex::new(None),
-            elastic_queue: tokio::sync::Mutex::new(None),
         }
     }
 
-    pub async fn add(&self, items: Vec<LogItem>) {
+    pub async fn add(&self, items: Vec<Arc<LogItem>>) {
         println!("Added events: {}", items.len());
-
-        let mut write_access = self.elastic_queue.lock().await;
-
-        if write_access.is_none() {
-            *write_access = Some(VecDeque::new());
-        }
-
-        write_access.as_mut().unwrap().extend(
-            items
-                .iter()
-                .map(ElasticLogModel::from_log_into_to_json_value),
-        );
 
         let mut write_access = self.queue.lock().await;
         if write_access.is_none() {
@@ -80,7 +69,7 @@ impl LogsQueue {
         write_access.as_mut().unwrap().extend(items);
     }
 
-    pub async fn get(&self, max_items_to_dequeue: usize) -> Option<VecDeque<LogItem>> {
+    pub async fn get(&self, max_items_to_dequeue: usize) -> Option<VecDeque<Arc<LogItem>>> {
         let mut write_access = self.queue.lock().await;
 
         if write_access.is_none() {
@@ -99,6 +88,9 @@ impl LogsQueue {
         }
         Some(result)
     }
+}
+
+/*
 
     pub async fn get_elastic(&self, max_items_to_dequeue: usize) -> Option<VecDeque<serde_json::Value>> {
         let mut write_access = self.elastic_queue.lock().await;
@@ -119,8 +111,7 @@ impl LogsQueue {
         }
         Some(result)
     }
-
-}
+*/
 
 impl EntityWithStrKey for LogItem {
     fn get_key(&self) -> &str {

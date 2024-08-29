@@ -19,7 +19,7 @@ impl FlushToDbTimer {
         Self { app }
     }
 
-    async fn send_to_telegram_if_needed(&self, items: &VecDeque<LogItem>) {
+    async fn send_to_telegram_if_needed(&self, items: &VecDeque<Arc<LogItem>>) {
         let mut to_send = Vec::new();
 
         for itm in items {
@@ -72,9 +72,12 @@ impl MyTimerTick for FlushToDbTimer {
                 let by_tenant = to_upload.get_mut(&item.tenant).unwrap();
 
                 if by_tenant.contains_key(&date_key) {
-                    by_tenant.get_mut(&date_key).unwrap().push(item.into());
+                    by_tenant
+                        .get_mut(&date_key)
+                        .unwrap()
+                        .push(item.as_ref().into());
                 } else {
-                    by_tenant.insert(date_key, vec![item.into()]);
+                    by_tenant.insert(date_key, vec![item.as_ref().into()]);
                 }
             }
 
@@ -90,17 +93,17 @@ impl MyTimerTick for FlushToDbTimer {
     }
 }
 
-impl Into<LogItemDto> for LogItem {
+impl<'s> Into<LogItemDto> for &'s LogItem {
     fn into(self) -> LogItemDto {
-        let mut context = self.ctx;
-        if let Some(process) = self.process {
-            context.insert(PROCESS_CONTEXT_KEY.to_string(), process);
+        let mut context = self.ctx.clone();
+        if let Some(process) = self.process.as_ref() {
+            context.insert(PROCESS_CONTEXT_KEY.to_string(), process.to_string());
         }
 
         LogItemDto {
-            id: self.id,
-            level: self.level.into(),
-            message: self.message,
+            id: self.id.to_string(),
+            level: (&self.level).into(),
+            message: self.message.to_string(),
             moment: self.timestamp,
             context,
         }

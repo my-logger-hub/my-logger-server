@@ -104,32 +104,44 @@ const AUTO_PANIC_HANDLER: &str = "Panic Handler";
 #[async_trait::async_trait]
 impl MyTimerTick for FlushToElastic {
     async fn tick(&self) {
-        let Some(elastic_client) = self.app.elastic_client.as_ref() else {
-            println!("Elastic client is not initialized");
+        let Some(elastic) = self.app.elastic.as_ref() else {
+            if self.app.is_debug {
+                println!("Elastic client is not initialized");
+            }
+
             return;
         };
 
-        while let Some(items) = self.app.logs_queue.get_elastic(1000).await {
+        while let Some(items) = elastic.logs_queue.get(1000).await {
             let index_name = &format!("services_logs_{}", self.env_source);
             let pattern = ElasticIndexRotationPattern::Day;
 
             let mut index = self.last_created_index.lock().await;
 
-            let current_date_index =
-                elastic_client.get_index_name_with_pattern(index_name, &pattern);
+            let current_date_index = elastic
+                .client
+                .get_index_name_with_pattern(index_name, &pattern);
 
             if index.is_none() {
                 *index = Some(current_date_index.clone());
-                init_elastic_log_index(elastic_client, index_name, &pattern).await;
+                init_elastic_log_index(&elastic.client, index_name, &pattern).await;
             }
 
             if index.clone().unwrap() != current_date_index {
                 *index = Some(current_date_index);
-                init_elastic_log_index(elastic_client, index_name, &pattern).await;
+                init_elastic_log_index(&elastic.client, index_name, &pattern).await;
             }
 
-            let response = elastic_client
-                .write_entities(index_name, &pattern, items.into_iter().collect())
+            let response = elastic
+                .client
+                .write_entities(
+                    index_name,
+                    &pattern,
+                    items
+                        .iter()
+                        .map(|itm| ElasticLogModel::from_log_into_to_json_value(itm.as_ref()))
+                        .collect(),
+                )
                 .await
                 .unwrap();
 
