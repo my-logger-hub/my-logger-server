@@ -247,6 +247,50 @@ impl LogsRepo {
         result
     }
 
+    pub async fn scan(
+        &self,
+        tenant: &str,
+        from_date: DateTimeAsMicroseconds,
+        to_date: DateTimeAsMicroseconds,
+        phrase: &str,
+        limit: usize,
+    ) -> Vec<LogItemDto> {
+        let where_model = WhereScanModel {
+            from_date: from_date.unix_microseconds,
+            to_date: to_date.unix_microseconds,
+            phrase,
+            limit,
+        };
+
+        let files = DateKey::get_keys_to_request(from_date, to_date);
+
+        println!("Files to request: {:?}", files);
+
+        let mut result = Vec::new();
+
+        for date_key in files.keys().rev() {
+            let sqlite = self.get_sqlite(tenant, *date_key).await;
+            if let Some(sqlite) = sqlite {
+                let items = sqlite.query_rows(TABLE_NAME, Some(&where_model)).await;
+
+                match items {
+                    Ok(items) => {
+                        result.extend(items);
+                    }
+                    Err(e) => {
+                        println!("Error: {:?}", e);
+                    }
+                }
+
+                if result.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        result
+    }
+
     pub async fn prepare_to_delete(&self, tenant: String, date_key: DateKey) {
         let mut write_access = self.sqlite_pool.lock().await;
 

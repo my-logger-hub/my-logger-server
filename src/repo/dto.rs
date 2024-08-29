@@ -100,10 +100,27 @@ pub struct WhereModel {
 }
 
 #[derive(WhereDbModel)]
-pub struct DeleteWhereModel {
-    #[operator("<=")]
+pub struct ScanWhereModel {
     #[sql_type("timestamp")]
+    #[db_column_name("moment")]
+    #[operator(">=")]
+    pub from_date: DateTimeAsMicroseconds,
+
+    #[sql_type("timestamp")]
+    #[db_column_name("moment")]
+    #[operator(">=")]
     pub to_date: DateTimeAsMicroseconds,
+
+    #[limit]
+    pub take: usize,
+}
+
+#[where_raw_model("moment => ${from_date} AND moment <= ${to_date} AND (message LIKE '%' || ${phrase} || '%' OR context LIKE '%' || ${phrase} || '%')")]
+pub struct WhereScanModel<'s> {
+    pub from_date: i64,
+    pub to_date: i64,
+    pub phrase: &'s str,
+    pub limit: usize,
 }
 
 #[derive(WhereDbModel)]

@@ -67,11 +67,21 @@ message DeleteIgnoreEventGrpcRequest{
     string Marker = 3;
 }
 
+message ScanAndSearchRequest{
+    string TenantId = 1;
+    string Phrase = 2;
+    uint64 FromTime = 3;
+    uint64 ToTime = 4;
+    int32 Take = 5;
+}
+
 
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
     rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
     rpc GetStatistic(GetStatisticsRequest) returns (StatisticData);
+
+    rpc ScanAndSearch(ScanAndSearchRequest) returns (stream LogEventGrpcModel);
 
     rpc SetIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
     rpc GetIgnoreEvents(google.protobuf.Empty) returns (stream IgnoreEventGrpcModel);

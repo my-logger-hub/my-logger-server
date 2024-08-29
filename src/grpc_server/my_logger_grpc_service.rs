@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::server::GrpcService;
@@ -40,28 +39,6 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ReadStream>, tonic::Status> {
         let request = request.into_inner();
 
-        let log_levels = if request.levels.len() > 0 {
-            Some(
-                request
-                    .levels()
-                    .into_iter()
-                    .map(|level| level.into())
-                    .collect(),
-            )
-        } else {
-            None
-        };
-
-        let context = if request.context_keys.len() > 0 {
-            let mut ctx = BTreeMap::new();
-            for itm in request.context_keys {
-                ctx.insert(itm.key, itm.value);
-            }
-            Some(ctx)
-        } else {
-            None
-        };
-
         let from_date = DateTimeAsMicroseconds::new(request.from_time);
 
         let to_date = if request.to_time > 0 {
@@ -70,20 +47,20 @@ impl MyLogger for GrpcService {
             None
         };
 
-        let response = self
-            .app
-            .logs_repo
-            .get(
-                &request.tenant_id,
-                from_date,
-                to_date,
-                log_levels,
-                context,
-                request.take as usize,
-            )
-            .await;
+        let levels: Vec<_> = request.levels().collect();
 
         let tenant_id = request.tenant_id;
+
+        let response = crate::flows::get_events(
+            &self.app,
+            levels,
+            request.context_keys,
+            from_date,
+            to_date,
+            tenant_id.as_str(),
+            request.take as usize,
+        )
+        .await;
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
             super::mapper::to_log_event_grpc_model(tenant_id.to_string(), dto)
@@ -131,6 +108,34 @@ impl MyLogger for GrpcService {
         }
 
         Ok(tonic::Response::new(result))
+    }
+
+    generate_server_stream!(stream_name:"ScanAndSearchStream", item_name:"LogEventGrpcModel");
+    async fn scan_and_search(
+        &self,
+        request: tonic::Request<ScanAndSearchRequest>,
+    ) -> Result<tonic::Response<Self::ScanAndSearchStream>, tonic::Status> {
+        let request = request.into_inner();
+
+        let from_date: DateTimeAsMicroseconds = request.from_time.into();
+        let to_date: DateTimeAsMicroseconds = request.to_time.into();
+
+        let tenant_id = request.tenant_id;
+
+        let response = crate::flows::search_and_scan(
+            &self.app,
+            &tenant_id,
+            from_date,
+            to_date,
+            &request.phrase,
+            request.take as usize,
+        )
+        .await;
+
+        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
+            super::mapper::to_log_event_grpc_model(tenant_id.to_string(), dto)
+        })
+        .await
     }
 
     async fn set_ignore_event(
