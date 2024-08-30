@@ -73,7 +73,7 @@ impl ElasticLogModel {
         if let serde_json::Value::Object(ref mut map) = model {
             for (key, value) in value.ctx.clone() {
                 if key != APP_CONTEXT {
-                    map.insert(key, Value::String(value));
+                    map.insert(format!("dyn_{}", key), Value::String(value));
                 }
             }
         }
@@ -152,10 +152,19 @@ async fn init_elastic_log_index(
                 "message": { "type": "keyword" },
                 "env_source": { "type": "keyword" },
                 "process": { "type": "keyword" },
-            }
+            },
+            "dynamic_templates": [
+                {
+                  "dyn_text_fields": {
+                    "match": "dyn_*",
+                    "mapping": {
+                      "type": "text"
+                    }
+                  }
+                }
+              ]
         }
     });
-
     let response = elastic
         .create_index_mapping(index_name, index_pattern, mapping)
         .await;
