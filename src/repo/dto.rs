@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
 use my_sqlite::macros::*;
+use my_sqlite::sql::RawField;
 use my_sqlite::GroupByCount;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
@@ -115,11 +116,11 @@ pub struct ScanWhereModel {
     pub take: usize,
 }
 
-#[where_raw_model("moment >= ${from_date} AND moment <= ${to_date} AND (message LIKE '%' || ${phrase} || '%' OR context LIKE '%' || ${phrase} || '%')")]
-pub struct WhereScanModel<'s> {
+#[where_raw_model("moment >= ${from_date} AND moment <= ${to_date} AND (message LIKE '%${phrase}%' OR context LIKE '%${phrase}%')")]
+pub struct WhereScanModel {
     pub from_date: i64,
     pub to_date: i64,
-    pub phrase: &'s str,
+    pub phrase: RawField,
     pub limit: usize,
 }
 

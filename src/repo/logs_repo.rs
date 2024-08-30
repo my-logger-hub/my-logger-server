@@ -6,6 +6,7 @@ use std::{
 
 use my_sqlite::*;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
+use sql::RawField;
 use sql_where::NoneWhereModel;
 use tokio::sync::Mutex;
 
@@ -258,7 +259,9 @@ impl LogsRepo {
         let where_model = WhereScanModel {
             from_date: from_date.unix_microseconds,
             to_date: to_date.unix_microseconds,
-            phrase,
+            phrase: RawField {
+                value: phrase.to_string(),
+            },
             limit,
         };
 
