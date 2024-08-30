@@ -115,7 +115,7 @@ pub struct ScanWhereModel {
     pub take: usize,
 }
 
-#[where_raw_model("moment => ${from_date} AND moment <= ${to_date} AND (message LIKE '%' || ${phrase} || '%' OR context LIKE '%' || ${phrase} || '%')")]
+#[where_raw_model("moment >= ${from_date} AND moment <= ${to_date} AND (message LIKE '%' || ${phrase} || '%' OR context LIKE '%' || ${phrase} || '%')")]
 pub struct WhereScanModel<'s> {
     pub from_date: i64,
     pub to_date: i64,
