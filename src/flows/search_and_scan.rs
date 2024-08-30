@@ -12,7 +12,7 @@ pub async fn search_and_scan(
 ) -> Vec<LogItemDto> {
     let response = app
         .logs_repo
-        .scan(tenant, from_date, to_date, phrase, limit)
+        .scan(tenant, from_date, to_date, phrase, limit, app.is_debug)
         .await;
 
     response

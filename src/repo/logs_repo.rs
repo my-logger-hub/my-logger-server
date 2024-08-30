@@ -255,6 +255,7 @@ impl LogsRepo {
         to_date: DateTimeAsMicroseconds,
         phrase: &str,
         limit: usize,
+        debug: bool,
     ) -> Vec<LogItemDto> {
         let where_model = WhereScanModel {
             from_date: from_date.unix_microseconds,
@@ -267,11 +268,17 @@ impl LogsRepo {
 
         let files = DateKey::get_keys_to_request(from_date, to_date);
 
-        println!("Files to request: {:?}", files);
-
         let mut result = Vec::new();
 
         for date_key in files.keys().rev() {
+            if debug {
+                println!(
+                    "Requesting from tenant:'{tenant}' file:'{}'. From: {}, to: {}",
+                    date_key.get_value(),
+                    from_date.to_rfc3339(),
+                    to_date.to_rfc3339()
+                );
+            }
             let sqlite = self.get_sqlite(tenant, *date_key).await;
             if let Some(sqlite) = sqlite {
                 let items = sqlite.query_rows(TABLE_NAME, Some(&where_model)).await;
