@@ -258,8 +258,8 @@ impl LogsRepo {
         debug: bool,
     ) -> Vec<LogItemDto> {
         let where_model = WhereScanModel {
-            from_date: from_date.unix_microseconds,
-            to_date: to_date.unix_microseconds,
+            from_date: from_date.to_rfc3339()[..19].to_string(),
+            to_date: to_date.to_rfc3339()[..19].to_string(),
             phrase: RawField {
                 value: phrase.to_string(),
             },

@@ -118,8 +118,8 @@ pub struct ScanWhereModel {
 
 #[where_raw_model("moment >= ${from_date} AND moment <= ${to_date} AND (message LIKE '%${phrase}%' OR context LIKE '%${phrase}%')")]
 pub struct WhereScanModel {
-    pub from_date: i64,
-    pub to_date: i64,
+    pub from_date: String,
+    pub to_date: String,
     pub phrase: RawField,
     pub limit: usize,
 }
