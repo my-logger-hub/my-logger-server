@@ -5,6 +5,13 @@ use crate::app::{AppContext, LogItem};
 pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
     let log_events = filter_events(app, log_events).await;
 
+    {
+        let mut hourly_statistics = app.hourly_statistics.lock().await;
+        for itm in log_events.iter() {
+            hourly_statistics.update(&itm);
+        }
+    }
+
     if log_events.len() == 0 {
         return;
     }

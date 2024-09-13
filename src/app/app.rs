@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     cache::FilterEventsCache,
+    hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
     repo::{LogsRepo, SettingsRepo},
 };
@@ -29,6 +30,8 @@ pub struct AppContext {
     pub elastic: Option<ElasticInner>,
     pub is_debug: bool,
     pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
+
+    pub hourly_statistics: Mutex<HourlyStatistics>,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -58,6 +61,7 @@ impl AppContext {
             settings_repo: SettingsRepo::new(settings_db_path).await,
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
+            hourly_statistics: Mutex::new(HourlyStatistics::new()),
             elastic: settings_reader
                 .get_elastic_settings()
                 .await

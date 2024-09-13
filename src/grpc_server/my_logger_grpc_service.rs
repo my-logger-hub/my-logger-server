@@ -6,6 +6,7 @@ use crate::my_logger_grpc::*;
 use crate::repo::dto::IgnoreWhereModel;
 
 use my_grpc_extensions::server::generate_server_stream;
+use my_grpc_extensions::server_stream_result::GrpcServerStreamResult;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
@@ -207,6 +208,43 @@ impl MyLogger for GrpcService {
             .await
             .delete(&request.id);
         return Ok(tonic::Response::new(()));
+    }
+
+    generate_server_stream!(stream_name:"GetHourlyStatisticsStream", item_name:"HourlyStatisticsGrpcModel");
+
+    async fn get_hourly_statistics(
+        &self,
+        request: tonic::Request<GetHourlyStatisticsRequest>,
+    ) -> Result<tonic::Response<Self::GetHourlyStatisticsStream>, tonic::Status> {
+        let request = request.into_inner();
+
+        let (mut stream_result, result) = GrpcServerStreamResult::new();
+
+        let app = self.app.clone();
+        tokio::spawn(async move {
+            let result = {
+                let read_access = app.hourly_statistics.lock().await;
+                read_access.get_max_hours(request.amount_of_hours as usize)
+            };
+
+            for (hour, items) in result {
+                for (app, statistics) in items {
+                    stream_result
+                        .send(HourlyStatisticsGrpcModel {
+                            hour_key: hour.get_value(),
+                            app,
+                            info_count: statistics.info,
+                            warning_count: statistics.warning,
+                            error_count: statistics.error,
+                            fatal_count: statistics.fatal_error,
+                            debug_count: statistics.debug,
+                        })
+                        .await;
+                }
+            }
+        });
+
+        Ok(result)
     }
 
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {

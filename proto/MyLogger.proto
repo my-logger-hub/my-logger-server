@@ -89,6 +89,20 @@ message DeleteIgnoreSingleEventGrpcRequest{
 }
 
 
+message GetHourlyStatisticsRequest{
+    int64 AmountOfHours = 1;
+}
+
+message HourlyStatisticsGrpcModel{
+    uint64 HourKey = 1;
+    string App = 2;
+    uint32 InfoCount = 3;
+    uint32 WarningCount = 4;
+    uint32 ErrorCount = 5;
+    uint32 FatalCount = 6;
+    uint32 DebugCount = 7;
+}
+
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
     rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
@@ -104,6 +118,8 @@ service MyLogger {
     rpc SetIgnoreSingleEvent(IgnoreSingleEventGrpcModel) returns (google.protobuf.Empty);
     rpc GetIgnoreSingleEvents(google.protobuf.Empty) returns (stream IgnoreSingleEventGrpcModel);
     rpc DeleteIgnoreSingleEvent(DeleteIgnoreSingleEventGrpcRequest) returns (google.protobuf.Empty);
+
+    rpc GetHourlyStatistics(GetHourlyStatisticsRequest) returns (stream HourlyStatisticsGrpcModel);
 
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }

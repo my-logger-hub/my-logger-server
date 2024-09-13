@@ -9,6 +9,7 @@ mod background;
 mod cache;
 mod flows;
 mod grpc_server;
+mod hourly_statistics;
 mod http;
 mod ignore_single_events;
 mod repo;
