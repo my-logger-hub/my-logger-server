@@ -36,7 +36,7 @@ impl HourlyStatistics {
         let app = app.unwrap();
 
         let key: StatisticsHour = log_item.timestamp.into();
-        if self.data.contains_key(&key) {
+        if !self.data.contains_key(&key) {
             self.data.insert(key, BTreeMap::new());
         }
 
