@@ -42,6 +42,8 @@ impl MyTimerTick for GcTimer {
             .await;
 
         gc_files(&self.app).await;
+
+        self.app.ignore_single_event_cache.lock().await.gc();
     }
 }
 

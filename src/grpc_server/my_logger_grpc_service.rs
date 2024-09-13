@@ -175,6 +175,40 @@ impl MyLogger for GrpcService {
         return Ok(tonic::Response::new(()));
     }
 
+    async fn set_ignore_single_event(
+        &self,
+        request: tonic::Request<IgnoreSingleEventGrpcModel>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let request = request.into_inner();
+
+        self.app.ignore_single_event_cache.lock().await.add(request);
+        return Ok(tonic::Response::new(()));
+    }
+
+    generate_server_stream!(stream_name:"GetIgnoreSingleEventsStream", item_name:"IgnoreSingleEventGrpcModel");
+    async fn get_ignore_single_events(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<Self::GetIgnoreSingleEventsStream>, tonic::Status> {
+        let result = self.app.ignore_single_event_cache.lock().await.get_all();
+
+        my_grpc_extensions::grpc_server::send_vec_to_stream(result.into_iter(), |dto| dto.into())
+            .await
+    }
+
+    async fn delete_ignore_single_event(
+        &self,
+        request: tonic::Request<DeleteIgnoreSingleEventGrpcRequest>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let request = request.into_inner();
+        self.app
+            .ignore_single_event_cache
+            .lock()
+            .await
+            .delete(&request.id);
+        return Ok(tonic::Response::new(()));
+    }
+
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {
         Ok(tonic::Response::new(()))
     }

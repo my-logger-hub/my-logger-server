@@ -75,6 +75,19 @@ message ScanAndSearchRequest{
     int32 Take = 5;
 }
 
+message IgnoreSingleEventGrpcModel{
+    string Id = 1;
+    repeated LogLevelGrpcModel Levels = 2;
+    string MessageMatch = 3;
+    repeated LogEventContext ContextMatch = 4;
+    uint64 SkipAmount = 5;
+    uint64 MinutesToWait = 6;
+}
+
+message DeleteIgnoreSingleEventGrpcRequest{
+    string Id = 1;
+}
+
 
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
@@ -86,6 +99,11 @@ service MyLogger {
     rpc SetIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
     rpc GetIgnoreEvents(google.protobuf.Empty) returns (stream IgnoreEventGrpcModel);
     rpc DeleteIgnoreEvent(DeleteIgnoreEventGrpcRequest) returns (google.protobuf.Empty);
+
+
+    rpc SetIgnoreSingleEvent(IgnoreSingleEventGrpcModel) returns (google.protobuf.Empty);
+    rpc GetIgnoreSingleEvents(google.protobuf.Empty) returns (stream IgnoreSingleEventGrpcModel);
+    rpc DeleteIgnoreSingleEvent(DeleteIgnoreSingleEventGrpcRequest) returns (google.protobuf.Empty);
 
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }
