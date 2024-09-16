@@ -1,7 +1,7 @@
 Settings example:
 
 ```rust
-DefaultTenant: Default
+EnvName: env-name
 LogsDbPath: /root/db
 hours_to_gc: 6
 IgnoreEvents:
