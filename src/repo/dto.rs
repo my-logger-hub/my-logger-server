@@ -101,6 +101,17 @@ pub struct WhereModel {
 }
 
 #[derive(WhereDbModel)]
+pub struct WhereWithNoDateIntervalModel {
+    #[ignore_if_none]
+    pub level: Option<Vec<LogLevelDto>>,
+    #[sql_type("jsonb")]
+    #[ignore_if_none]
+    pub context: Option<BTreeMap<String, String>>,
+    #[limit]
+    pub take: usize,
+}
+
+#[derive(WhereDbModel)]
 pub struct ScanWhereModel {
     #[sql_type("timestamp")]
     #[db_column_name("moment")]

@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::server::GrpcService;
 use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
 use crate::repo::dto::IgnoreWhereModel;
+use crate::repo::DateHourKey;
 
 use my_grpc_extensions::server::generate_server_stream;
 use my_grpc_extensions::server_stream_result::GrpcServerStreamResult;
@@ -40,30 +42,53 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ReadStream>, tonic::Status> {
         let request = request.into_inner();
 
-        let from_date = DateTimeAsMicroseconds::new(request.from_time);
-
-        let to_date = if request.to_time > 0 {
-            Some(DateTimeAsMicroseconds::new(request.to_time))
-        } else {
-            None
-        };
-
         let levels: Vec<_> = request.levels().collect();
 
-        let tenant_id = request.tenant_id;
+        let response = if request.to_time == -1 {
+            let date_key: DateHourKey = request.from_time.into();
 
-        let response = crate::flows::get_events(
-            &self.app,
-            levels,
-            request.context_keys,
-            from_date,
-            to_date,
-            request.take as usize,
-        )
-        .await;
+            let levels = if levels.len() > 0 {
+                Some(levels.into_iter().map(|level| level.into()).collect())
+            } else {
+                None
+            };
+
+            let context = if request.context_keys.len() > 0 {
+                let mut ctx = BTreeMap::new();
+                for itm in request.context_keys {
+                    ctx.insert(itm.key, itm.value);
+                }
+                Some(ctx)
+            } else {
+                None
+            };
+
+            self.app
+                .logs_repo
+                .get_from_certain_hour(date_key, levels, context, request.take as usize)
+                .await
+        } else {
+            let from_date = DateTimeAsMicroseconds::new(request.from_time);
+
+            let to_date = if request.to_time > 0 {
+                Some(DateTimeAsMicroseconds::new(request.to_time))
+            } else {
+                None
+            };
+
+            crate::flows::get_events(
+                &self.app,
+                levels,
+                request.context_keys,
+                from_date,
+                to_date,
+                request.take as usize,
+            )
+            .await
+        };
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
-            super::mapper::to_log_event_grpc_model(tenant_id.to_string(), dto)
+            super::mapper::to_log_event_grpc_model(dto)
         })
         .await
     }
@@ -74,15 +99,6 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<StatisticData>, tonic::Status> {
         let _request = request.into_inner();
 
-        /*
-               let from_date = DateTimeAsMicroseconds::new(request.from_time);
-
-               let to_date = if request.to_time > 0 {
-                   Some(DateTimeAsMicroseconds::new(request.to_time))
-               } else {
-                   None
-               };
-        */
         let response = self.app.logs_repo.get_statistics().await;
 
         let mut result = StatisticData {
@@ -133,7 +149,7 @@ impl MyLogger for GrpcService {
         .await;
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
-            super::mapper::to_log_event_grpc_model(tenant_id.to_string(), dto)
+            super::mapper::to_log_event_grpc_model(dto)
         })
         .await
     }

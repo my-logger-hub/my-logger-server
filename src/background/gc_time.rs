@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use rust_extensions::{date_time::DateTimeAsMicroseconds, str_utils::StrUtils, MyTimerTick};
 
-use crate::{app::AppContext, repo::DateKey};
+use crate::{app::AppContext, repo::DateHourKey};
 
 pub struct GcTimer {
     pub app: Arc<AppContext>,
@@ -60,7 +60,7 @@ async fn gc_files(app: &AppContext) {
     let gc_from = app.settings_reader.get_duration_to_gc().await;
 
     let gc_date_key = DateTimeAsMicroseconds::now().sub(gc_from);
-    let gc_date_key: DateKey = gc_date_key.into();
+    let gc_date_key: DateHourKey = gc_date_key.into();
 
     let mut to_gc = BTreeMap::new();
     for file_name in files {
@@ -100,10 +100,10 @@ async fn gc_files(app: &AppContext) {
     }
 }
 
-fn check_if_file_name_with_logs(file_name: &str) -> Option<(String, DateKey)> {
+fn check_if_file_name_with_logs(file_name: &str) -> Option<(String, DateHourKey)> {
     let (left_element, right_element) = file_name.split_exact_to_2_lines("-")?;
 
-    let date_component = DateKey::parse_from_str(right_element)?;
+    let date_component = DateHourKey::parse_from_str(right_element)?;
 
     return (left_element.to_string(), date_component).into();
 }

@@ -7,7 +7,7 @@ use rust_extensions::MyTimerTick;
 
 use crate::{
     app::{AppContext, LogItem, PROCESS_CONTEXT_KEY},
-    repo::{dto::LogItemDto, DateKey},
+    repo::{dto::LogItemDto, DateHourKey},
 };
 
 pub struct FlushToDbTimer {
@@ -73,10 +73,10 @@ impl MyTimerTick for FlushToDbTimer {
         while let Some(items) = self.app.logs_queue.get(1000).await {
             self.send_to_telegram_if_needed(&items).await;
 
-            let mut to_upload: BTreeMap<DateKey, Vec<LogItemDto>> = BTreeMap::new();
+            let mut to_upload: BTreeMap<DateHourKey, Vec<LogItemDto>> = BTreeMap::new();
 
             for item in items {
-                let date_key = DateKey::new(item.timestamp);
+                let date_key = DateHourKey::new(item.timestamp);
 
                 if to_upload.contains_key(&date_key) {
                     to_upload

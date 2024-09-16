@@ -4,9 +4,9 @@ use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 
-pub struct DateKey(i64);
+pub struct DateHourKey(i64);
 
-impl DateKey {
+impl DateHourKey {
     pub fn new(now: DateTimeAsMicroseconds) -> Self {
         let itm: DateTimeStruct = now.into();
 
@@ -56,13 +56,13 @@ impl DateKey {
     }
 }
 
-impl From<i64> for DateKey {
+impl From<i64> for DateHourKey {
     fn from(value: i64) -> Self {
         Self(value)
     }
 }
 
-impl From<DateTimeAsMicroseconds> for DateKey {
+impl From<DateTimeAsMicroseconds> for DateHourKey {
     fn from(value: DateTimeAsMicroseconds) -> Self {
         Self::new(value)
     }

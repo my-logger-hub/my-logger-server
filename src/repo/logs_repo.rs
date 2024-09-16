@@ -6,7 +6,7 @@ use sql::RawField;
 use sql_where::NoneWhereModel;
 use tokio::sync::Mutex;
 
-use super::{dto::*, DateKey};
+use super::{dto::*, DateHourKey};
 
 const TABLE_NAME: &str = "logs";
 //const PK_NAME: &str = "logs_pk";
@@ -15,14 +15,14 @@ const TABLE_NAME: &str = "logs";
 
 #[derive(Default)]
 pub struct LogsRepoPool {
-    pool: BTreeMap<DateKey, Arc<SqlLiteConnection>>,
-    to_delete: Option<DateKey>,
+    pool: BTreeMap<DateHourKey, Arc<SqlLiteConnection>>,
+    to_delete: Option<DateHourKey>,
 }
 
 impl LogsRepoPool {
     async fn get_or_create_sqlite(
         &mut self,
-        date_key: DateKey,
+        date_key: DateHourKey,
         get_file_name: impl Fn() -> String,
     ) -> Arc<SqlLiteConnection> {
         if let Some(result) = self.pool.get(&date_key) {
@@ -48,7 +48,7 @@ impl LogsRepoPool {
 
     async fn get_sqlite(
         &mut self,
-        date_key: DateKey,
+        date_key: DateHourKey,
         get_file_name: impl Fn() -> String,
     ) -> Option<Arc<SqlLiteConnection>> {
         if let Some(to_delete) = self.to_delete.as_ref() {
@@ -100,7 +100,7 @@ impl LogsRepo {
         }
     }
 
-    pub fn compile_file_name(&self, date_key: DateKey) -> String {
+    pub fn compile_file_name(&self, date_key: DateHourKey) -> String {
         let mut path = self.path.clone();
 
         path.push_str("logs-");
@@ -108,7 +108,7 @@ impl LogsRepo {
         path
     }
 
-    async fn get_or_create_sqlite(&self, date_key: DateKey) -> Arc<SqlLiteConnection> {
+    async fn get_or_create_sqlite(&self, date_key: DateHourKey) -> Arc<SqlLiteConnection> {
         let mut write_access = self.sqlite_pool.lock().await;
 
         write_access
@@ -116,7 +116,7 @@ impl LogsRepo {
             .await
     }
 
-    async fn get_sqlite(&self, date_key: DateKey) -> Option<Arc<SqlLiteConnection>> {
+    async fn get_sqlite(&self, date_key: DateHourKey) -> Option<Arc<SqlLiteConnection>> {
         let mut write_access = self.sqlite_pool.lock().await;
 
         write_access
@@ -126,17 +126,17 @@ impl LogsRepo {
 
     async fn get_last_sqlite(&self) -> Option<Arc<SqlLiteConnection>> {
         let now = DateTimeAsMicroseconds::now();
-        let date_key: DateKey = now.into();
+        let date_key: DateHourKey = now.into();
         self.get_sqlite(date_key).await
     }
 
     async fn get_last_and_before(&self) -> Vec<Arc<SqlLiteConnection>> {
         let now = DateTimeAsMicroseconds::now();
-        let date_key_now: DateKey = now.into();
+        let date_key_now: DateHourKey = now.into();
 
         let before = now.sub(Duration::from_secs(60 * 60));
 
-        let date_key_before: DateKey = before.into();
+        let date_key_before: DateHourKey = before.into();
 
         let mut result = Vec::with_capacity(2);
 
@@ -159,12 +159,39 @@ impl LogsRepo {
         return result;
     }
 
-    pub async fn upload(&self, date_key: DateKey, items: &[LogItemDto]) {
+    pub async fn upload(&self, date_key: DateHourKey, items: &[LogItemDto]) {
         self.get_or_create_sqlite(date_key)
             .await
             .bulk_insert_db_entities_if_not_exists(items, TABLE_NAME)
             .await
             .unwrap();
+    }
+
+    pub async fn get_from_certain_hour(
+        &self,
+        date_key: DateHourKey,
+        levels: Option<Vec<LogLevelDto>>,
+        context: Option<BTreeMap<String, String>>,
+        take: usize,
+    ) -> Vec<LogItemDto> {
+        let sqlite = self.get_sqlite(date_key).await;
+
+        if sqlite.is_none() {
+            return Vec::new();
+        }
+
+        let sqlite = sqlite.unwrap();
+
+        let where_model = WhereWithNoDateIntervalModel {
+            level: levels,
+            take,
+            context,
+        };
+
+        sqlite
+            .query_rows(TABLE_NAME, Some(&where_model))
+            .await
+            .unwrap()
     }
 
     pub async fn get(
@@ -183,7 +210,7 @@ impl LogsRepo {
             context,
         };
 
-        let files = DateKey::get_keys_to_request(
+        let files = DateHourKey::get_keys_to_request(
             from_date,
             to_date.unwrap_or(DateTimeAsMicroseconds::now()),
         );
@@ -233,7 +260,7 @@ impl LogsRepo {
             limit,
         };
 
-        let files = DateKey::get_keys_to_request(from_date, to_date);
+        let files = DateHourKey::get_keys_to_request(from_date, to_date);
 
         let mut result = Vec::new();
 
@@ -268,7 +295,7 @@ impl LogsRepo {
         result
     }
 
-    pub async fn prepare_to_delete(&self, date_key: DateKey) {
+    pub async fn prepare_to_delete(&self, date_key: DateHourKey) {
         let mut write_access = self.sqlite_pool.lock().await;
 
         write_access.to_delete = Some(date_key);
@@ -303,8 +330,8 @@ impl LogsRepo {
         files
     }
 
-    pub async fn gc(&self, to_date: DateTimeAsMicroseconds) -> Vec<DateKey> {
-        let gc_from = DateKey::new(to_date);
+    pub async fn gc(&self, to_date: DateTimeAsMicroseconds) -> Vec<DateHourKey> {
+        let gc_from = DateHourKey::new(to_date);
 
         let mut read_access = self.sqlite_pool.lock().await;
 

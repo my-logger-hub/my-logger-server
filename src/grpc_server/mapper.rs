@@ -63,13 +63,13 @@ impl Into<LogLevelGrpcModel> for crate::repo::dto::LogLevelDto {
     }
 }
 
-pub fn to_log_event_grpc_model(tenant: String, mut src: LogItemDto) -> LogEventGrpcModel {
+pub fn to_log_event_grpc_model(mut src: LogItemDto) -> LogEventGrpcModel {
     let log_level_grpc: LogLevelGrpcModel = src.level.into();
 
     let process_name = src.context.remove(PROCESS_CONTEXT_KEY);
 
     LogEventGrpcModel {
-        tenant_id: tenant,
+        tenant_id: String::new(),
         timestamp: src.moment.unix_microseconds,
         process_name: process_name.unwrap_or_default(),
         message: src.message,
