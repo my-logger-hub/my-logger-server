@@ -6,10 +6,6 @@ pub async fn write_hour_statistics(app: &AppContext) {
     let to_persist = {
         let mut hourly_statistics = app.hourly_statistics.lock().await;
 
-        println!(
-            "Persisting statistics for {:?} hours",
-            hourly_statistics.to_persist
-        );
         if hourly_statistics.to_persist.len() == 0 {
             return;
         }
