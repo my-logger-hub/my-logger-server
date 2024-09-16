@@ -12,7 +12,6 @@ impl HourStatisticsRepo {
     pub async fn new(path: String) -> Self {
         Self {
             sqlite: SqlLiteConnectionBuilder::new(path)
-                .debug(true)
                 .create_table_if_no_exists::<HourStatisticsDto>(TABLE_NAME)
                 .build()
                 .await
