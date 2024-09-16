@@ -67,6 +67,8 @@ impl FlushToDbTimer {
 #[async_trait::async_trait]
 impl MyTimerTick for FlushToDbTimer {
     async fn tick(&self) {
+        crate::flows::write_hour_statistics(&self.app).await;
+
         while let Some(items) = self.app.logs_queue.get(1000).await {
             self.send_to_telegram_if_needed(&items).await;
 
@@ -99,8 +101,6 @@ impl MyTimerTick for FlushToDbTimer {
                         .await;
                 }
             }
-
-            crate::flows::write_hour_statistics(&self.app).await;
         }
     }
 }

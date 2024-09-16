@@ -21,6 +21,8 @@ impl HourStatisticsRepo {
     }
 
     pub async fn insert_or_update(&self, dto: &HourStatisticsDto) {
+        println!("Inserting or updating {:?}", dto);
+
         self.sqlite
             .insert_or_update_db_entity(TABLE_NAME, dto)
             .await
