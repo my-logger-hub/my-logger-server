@@ -32,13 +32,13 @@ pub async fn add_ignore_event(app: &AppContext, event: IgnoreItemDto) {
             &telegram_settings,
             &LogItem {
                 id: dt.to_rfc3339(),
-                tenant: "System".to_string(),
                 level: my_logger::LogLevel::Info,
                 process: None,
                 message: "Ignore event is added".to_string(),
                 timestamp: dt,
                 ctx,
             },
+            &app.env_name,
         )
         .await;
     }

@@ -13,7 +13,7 @@ pub struct PostJsonLogsV2InputData {
 }
 
 impl PostJsonLogsV2InputData {
-    pub fn parse_log_events(&self, tenant: &str) -> Result<Vec<LogItem>, HttpFailResult> {
+    pub fn parse_log_events(&self) -> Result<Vec<LogItem>, HttpFailResult> {
         let items = self.body.deserialize_json()?;
 
         let mut result = Vec::with_capacity(items.len());
@@ -32,7 +32,6 @@ impl PostJsonLogsV2InputData {
 
             result.push(LogItem {
                 id: crate::utils::generate_log_id(),
-                tenant: tenant.to_string(),
                 level: itm.level.into(),
                 process: itm.process,
                 message: itm.message,

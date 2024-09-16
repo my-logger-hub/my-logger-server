@@ -7,7 +7,6 @@ pub struct TelegramSettings {
     pub api_key: String,
     pub chat_id: i64,
     pub message_thread_id: i32,
-    pub env_info: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -19,9 +18,6 @@ pub struct ElasticSettings {
 
 #[derive(my_settings_reader::SettingsModel, Serialize, Deserialize, Debug, Clone)]
 pub struct SettingsModel {
-    #[serde(rename = "DefaultTenant")]
-    pub default_tenant: String,
-
     #[serde(rename = "ApiKey")]
     pub api_key: Option<String>,
 
@@ -32,15 +28,23 @@ pub struct SettingsModel {
 
     #[serde(rename = "TelegramSettings")]
     pub telegram_settings: Option<TelegramSettings>,
-    
+
     #[serde(rename = "ElasticSettings")]
     pub elastic: Option<ElasticSettings>,
+
+    #[serde(rename = "EnvName")]
+    pub env_name: String,
 }
 
 impl SettingsReader {
     pub async fn get_telegram_settings(&self) -> Option<TelegramSettings> {
         let read_access = self.settings.read().await;
         read_access.telegram_settings.clone()
+    }
+
+    pub async fn get_env_name(&self) -> String {
+        let read_access = self.settings.read().await;
+        read_access.env_name.clone()
     }
 
     pub async fn get_elastic_settings(&self) -> Option<ElasticSettings> {
@@ -73,10 +77,5 @@ impl SettingsReader {
         }
 
         result
-    }
-
-    pub async fn get_default_tenant(&self) -> String {
-        let read_access = self.settings.read().await;
-        read_access.default_tenant.clone()
     }
 }

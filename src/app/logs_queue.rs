@@ -4,14 +4,13 @@ use std::{
 };
 
 use my_logger::LogLevel;
-use rust_extensions::{date_time::DateTimeAsMicroseconds, sorted_vec::EntityWithStrKey};
+use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::repo::dto::LogLevelDto;
 
 #[derive(Debug)]
 pub struct LogItem {
     pub id: String,
-    pub tenant: String,
     pub level: LogLevel,
     pub process: Option<String>,
     pub message: String,
@@ -112,9 +111,3 @@ impl LogsQueue {
         Some(result)
     }
 */
-
-impl EntityWithStrKey for LogItem {
-    fn get_key(&self) -> &str {
-        &self.tenant
-    }
-}

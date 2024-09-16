@@ -20,12 +20,12 @@ pub struct ElasticLogModel {
 }
 
 impl ElasticLogModel {
-    pub fn from_log_into_to_json_value(value: &LogItem) -> serde_json::Value {
+    pub fn from_log_into_to_json_value(value: &LogItem, env_name: &str) -> serde_json::Value {
         if let Some(process) = &value.process {
             if process.contains(AUTO_PANIC_HANDLER) {
                 let mut model = serde_json::to_value(ElasticLogModel {
                     inner_id: value.id.clone(),
-                    env_source: value.tenant.to_uppercase(),
+                    env_source: env_name.to_uppercase(),
                     log_level: value.level.to_string().to_string(),
                     process: AUTO_PANIC_HANDLER.to_string(),
                     message: "Auto panic handler".to_string(),
@@ -57,7 +57,7 @@ impl ElasticLogModel {
 
         let mut model = serde_json::to_value(ElasticLogModel {
             inner_id: value.id.clone(),
-            env_source: value.tenant.to_uppercase(),
+            env_source: env_name.to_uppercase(),
             log_level: value.level.to_string().to_string(),
             process: value.process.clone().unwrap_or("N/A".to_string()),
             message: value.message.clone(),
@@ -139,7 +139,12 @@ impl MyTimerTick for FlushToElastic {
                     &pattern,
                     items
                         .iter()
-                        .map(|itm| ElasticLogModel::from_log_into_to_json_value(itm.as_ref()))
+                        .map(|itm| {
+                            ElasticLogModel::from_log_into_to_json_value(
+                                itm.as_ref(),
+                                &self.env_source,
+                            )
+                        })
                         .collect(),
                 )
                 .await

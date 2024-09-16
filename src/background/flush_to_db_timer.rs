@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     sync::Arc,
 };
 
@@ -58,7 +58,8 @@ impl FlushToDbTimer {
             };
 
             if !skip {
-                crate::telegram_api::send_log_item(&telegram_settings, itm).await;
+                crate::telegram_api::send_log_item(&telegram_settings, itm, &self.app.env_name)
+                    .await;
             }
         }
     }
@@ -72,34 +73,23 @@ impl MyTimerTick for FlushToDbTimer {
         while let Some(items) = self.app.logs_queue.get(1000).await {
             self.send_to_telegram_if_needed(&items).await;
 
-            let mut to_upload: HashMap<String, BTreeMap<DateKey, Vec<LogItemDto>>> = HashMap::new();
+            let mut to_upload: BTreeMap<DateKey, Vec<LogItemDto>> = BTreeMap::new();
 
             for item in items {
                 let date_key = DateKey::new(item.timestamp);
 
-                if !to_upload.contains_key(&item.tenant) {
-                    to_upload.insert(item.tenant.to_string(), BTreeMap::new());
-                }
-
-                let by_tenant = to_upload.get_mut(&item.tenant).unwrap();
-
-                if by_tenant.contains_key(&date_key) {
-                    by_tenant
+                if to_upload.contains_key(&date_key) {
+                    to_upload
                         .get_mut(&date_key)
                         .unwrap()
                         .push(item.as_ref().into());
                 } else {
-                    by_tenant.insert(date_key, vec![item.as_ref().into()]);
+                    to_upload.insert(date_key, vec![item.as_ref().into()]);
                 }
             }
 
-            for (tenant, items) in to_upload {
-                for (date_key, items) in items {
-                    self.app
-                        .logs_repo
-                        .upload(tenant.as_str(), date_key, items.as_slice())
-                        .await;
-                }
+            for (date_key, items) in to_upload {
+                self.app.logs_repo.upload(date_key, items.as_slice()).await;
             }
         }
     }

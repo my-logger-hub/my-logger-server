@@ -103,7 +103,6 @@ mod tests {
 
         let log_item = LogItem {
             id: "Test".to_string(),
-            tenant: "Test".to_string(),
             level: my_logger::LogLevel::Error,
             process: Some("Test".to_string()),
             message: "Test".to_string(),
@@ -116,7 +115,6 @@ mod tests {
         now.add_seconds(1);
         let log_item = LogItem {
             id: "Test".to_string(),
-            tenant: "Test".to_string(),
             level: my_logger::LogLevel::Error,
             process: Some("Test".to_string()),
             message: "Test".to_string(),
@@ -129,7 +127,6 @@ mod tests {
         now.add_seconds(1);
         let log_item = LogItem {
             id: "Test".to_string(),
-            tenant: "Test".to_string(),
             level: my_logger::LogLevel::Error,
             process: Some("Test".to_string()),
             message: "Test".to_string(),

@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use my_sqlite::*;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
@@ -19,24 +15,17 @@ const TABLE_NAME: &str = "logs";
 
 #[derive(Default)]
 pub struct LogsRepoPool {
-    pool: HashMap<String, BTreeMap<DateKey, Arc<SqlLiteConnection>>>,
-    to_delete: HashMap<String, DateKey>,
+    pool: BTreeMap<DateKey, Arc<SqlLiteConnection>>,
+    to_delete: Option<DateKey>,
 }
 
 impl LogsRepoPool {
     async fn get_or_create_sqlite(
         &mut self,
-        tenant: &str,
         date_key: DateKey,
         get_file_name: impl Fn() -> String,
     ) -> Arc<SqlLiteConnection> {
-        if !self.pool.contains_key(tenant) {
-            self.pool.insert(tenant.to_string(), BTreeMap::new());
-        }
-
-        let pool_by_tenant = self.pool.get_mut(tenant).unwrap();
-
-        if let Some(result) = pool_by_tenant.get(&date_key) {
+        if let Some(result) = self.pool.get(&date_key) {
             return result.clone();
         }
 
@@ -52,25 +41,23 @@ impl LogsRepoPool {
 
         let sqlite = Arc::new(sqlite);
 
-        pool_by_tenant.insert(date_key, sqlite.clone());
+        self.pool.insert(date_key, sqlite.clone());
 
         sqlite
     }
 
     async fn get_sqlite(
         &mut self,
-        tenant: &str,
         date_key: DateKey,
         get_file_name: impl Fn() -> String,
     ) -> Option<Arc<SqlLiteConnection>> {
-        if let Some(to_delete) = self.to_delete.get(tenant) {
+        if let Some(to_delete) = self.to_delete.as_ref() {
             if to_delete.get_value() == date_key.get_value() {
                 return None;
             }
         }
 
-        let by_tenant = self.pool.get_mut(tenant)?;
-        if let Some(instance) = by_tenant.get(&date_key) {
+        if let Some(instance) = self.pool.get(&date_key) {
             return Some(instance.clone());
         }
 
@@ -90,7 +77,7 @@ impl LogsRepoPool {
             .unwrap();
 
         let sqlite = Arc::new(sqlite);
-        by_tenant.insert(date_key, sqlite.clone());
+        self.pool.insert(date_key, sqlite.clone());
 
         Some(sqlite)
     }
@@ -113,42 +100,34 @@ impl LogsRepo {
         }
     }
 
-    pub fn compile_file_name(&self, tenant: &str, date_key: DateKey) -> String {
+    pub fn compile_file_name(&self, date_key: DateKey) -> String {
         let mut path = self.path.clone();
-        path.push_str(&tenant);
-        path.push('-');
+
+        path.push_str("logs-");
         path.push_str(date_key.get_value().to_string().as_str());
         path
     }
 
-    async fn get_or_create_sqlite(
-        &self,
-        tenant: &str,
-        date_key: DateKey,
-    ) -> Arc<SqlLiteConnection> {
+    async fn get_or_create_sqlite(&self, date_key: DateKey) -> Arc<SqlLiteConnection> {
         let mut write_access = self.sqlite_pool.lock().await;
 
         write_access
-            .get_or_create_sqlite(tenant, date_key, || {
-                self.compile_file_name(tenant, date_key)
-            })
+            .get_or_create_sqlite(date_key, || self.compile_file_name(date_key))
             .await
     }
 
-    async fn get_sqlite(&self, tenant: &str, date_key: DateKey) -> Option<Arc<SqlLiteConnection>> {
+    async fn get_sqlite(&self, date_key: DateKey) -> Option<Arc<SqlLiteConnection>> {
         let mut write_access = self.sqlite_pool.lock().await;
 
         write_access
-            .get_sqlite(tenant, date_key, || {
-                self.compile_file_name(tenant, date_key)
-            })
+            .get_sqlite(date_key, || self.compile_file_name(date_key))
             .await
     }
 
-    async fn get_last_sqlite(&self, tenant: &str) -> Option<Arc<SqlLiteConnection>> {
+    async fn get_last_sqlite(&self) -> Option<Arc<SqlLiteConnection>> {
         let now = DateTimeAsMicroseconds::now();
         let date_key: DateKey = now.into();
-        self.get_sqlite(tenant, date_key).await
+        self.get_sqlite(date_key).await
     }
 
     async fn get_last_and_before(&self) -> Vec<Arc<SqlLiteConnection>> {
@@ -163,36 +142,25 @@ impl LogsRepo {
 
         let mut write_access = self.sqlite_pool.lock().await;
 
-        let tenants: Vec<_> = write_access
-            .pool
-            .keys()
-            .map(|itm| itm.to_string())
-            .collect();
-        for tenant in tenants {
-            if let Some(sqlite) = write_access
-                .get_sqlite(&tenant, date_key_now, || {
-                    self.compile_file_name(&tenant, date_key_now)
-                })
-                .await
-            {
-                result.push(sqlite)
-            }
+        if let Some(sqlite) = write_access
+            .get_sqlite(date_key_now, || self.compile_file_name(date_key_now))
+            .await
+        {
+            result.push(sqlite)
+        }
 
-            if let Some(sqlite) = write_access
-                .get_sqlite(&tenant, date_key_before, || {
-                    self.compile_file_name(&tenant, date_key_before)
-                })
-                .await
-            {
-                result.push(sqlite)
-            }
+        if let Some(sqlite) = write_access
+            .get_sqlite(date_key_before, || self.compile_file_name(date_key_before))
+            .await
+        {
+            result.push(sqlite)
         }
 
         return result;
     }
 
-    pub async fn upload(&self, tenant: &str, date_key: DateKey, items: &[LogItemDto]) {
-        self.get_or_create_sqlite(tenant, date_key)
+    pub async fn upload(&self, date_key: DateKey, items: &[LogItemDto]) {
+        self.get_or_create_sqlite(date_key)
             .await
             .bulk_insert_db_entities_if_not_exists(items, TABLE_NAME)
             .await
@@ -201,7 +169,6 @@ impl LogsRepo {
 
     pub async fn get(
         &self,
-        tenant: &str,
         from_date: DateTimeAsMicroseconds,
         to_date: Option<DateTimeAsMicroseconds>,
         levels: Option<Vec<LogLevelDto>>,
@@ -226,7 +193,7 @@ impl LogsRepo {
         let mut result = Vec::new();
 
         for date_key in files.keys().rev() {
-            let sqlite = self.get_sqlite(tenant, *date_key).await;
+            let sqlite = self.get_sqlite(*date_key).await;
             if let Some(sqlite) = sqlite {
                 let items = sqlite.query_rows(TABLE_NAME, Some(&where_model)).await;
 
@@ -279,7 +246,7 @@ impl LogsRepo {
                     to_date.to_rfc3339()
                 );
             }
-            let sqlite = self.get_sqlite(tenant, *date_key).await;
+            let sqlite = self.get_sqlite(*date_key).await;
             if let Some(sqlite) = sqlite {
                 let items = sqlite.query_rows(TABLE_NAME, Some(&where_model)).await;
 
@@ -301,18 +268,14 @@ impl LogsRepo {
         result
     }
 
-    pub async fn prepare_to_delete(&self, tenant: String, date_key: DateKey) {
+    pub async fn prepare_to_delete(&self, date_key: DateKey) {
         let mut write_access = self.sqlite_pool.lock().await;
 
-        if let Some(pool_by_tenant) = write_access.pool.get_mut(tenant.as_str()) {
-            pool_by_tenant.remove(&date_key);
-        }
-
-        write_access.to_delete.insert(tenant, date_key);
+        write_access.to_delete = Some(date_key);
     }
 
-    pub async fn get_statistics(&self, tenant: &str) -> Vec<StatisticsModel> {
-        if let Some(sqlite) = self.get_last_sqlite(tenant).await {
+    pub async fn get_statistics(&self) -> Vec<StatisticsModel> {
+        if let Some(sqlite) = self.get_last_sqlite().await {
             return sqlite
                 .query_rows(TABLE_NAME, NoneWhereModel::new())
                 .await
@@ -340,29 +303,23 @@ impl LogsRepo {
         files
     }
 
-    pub async fn gc(&self, to_date: DateTimeAsMicroseconds) -> HashMap<String, Vec<DateKey>> {
+    pub async fn gc(&self, to_date: DateTimeAsMicroseconds) -> Vec<DateKey> {
         let gc_from = DateKey::new(to_date);
 
         let mut read_access = self.sqlite_pool.lock().await;
 
-        let mut result = HashMap::new();
-
-        for (tenant, pool) in read_access.pool.iter_mut() {
-            let mut to_gc = Vec::new();
-            for date_key in pool.keys() {
-                if date_key < &gc_from {
-                    to_gc.push(*date_key)
-                }
+        let mut to_gc = Vec::new();
+        for date_key in read_access.pool.keys() {
+            if date_key < &gc_from {
+                to_gc.push(*date_key)
             }
-
-            for to_gc in &to_gc {
-                pool.remove(to_gc);
-            }
-
-            result.insert(tenant.to_string(), to_gc);
         }
 
-        result
+        for to_gc in &to_gc {
+            read_access.pool.remove(to_gc);
+        }
+
+        to_gc
     }
 
     pub async fn gc_level(&self, to_date: DateTimeAsMicroseconds, level: LogLevelDto) {

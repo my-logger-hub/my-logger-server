@@ -18,7 +18,6 @@ impl Into<crate::app::LogItem> for LogEventGrpcModel {
 
         crate::app::LogItem {
             id: crate::utils::generate_log_id(),
-            tenant: self.tenant_id,
             level,
             process: self.process_name.into(),
             message: self.message,

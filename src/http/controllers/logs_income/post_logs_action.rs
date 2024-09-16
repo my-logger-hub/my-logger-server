@@ -30,15 +30,13 @@ async fn handle_request(
     input_data: SeqInputHttpData,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    let get_default_tenant = action.app.settings_reader.get_default_tenant().await;
-
     /*
     println!(
         "We have log event: {}",
         std::str::from_utf8(input_data.body.as_slice()).unwrap()
     );
      */
-    let log_events = input_data.parse_log_events(get_default_tenant.as_str());
+    let log_events = input_data.parse_log_events();
 
     if let Some(log_events) = log_events {
         crate::flows::post_items(&action.app, log_events).await;

@@ -10,7 +10,6 @@ pub async fn get_events(
     context_keys: Vec<LogEventContext>,
     from_date: DateTimeAsMicroseconds,
     to_date: Option<DateTimeAsMicroseconds>,
-    tenant_id: &str,
     take: usize,
 ) -> Vec<LogItemDto> {
     let log_levels = if levels.len() > 0 {
@@ -31,7 +30,7 @@ pub async fn get_events(
 
     let response = app
         .logs_repo
-        .get(tenant_id, from_date, to_date, log_levels, context, take)
+        .get(from_date, to_date, log_levels, context, take)
         .await;
 
     response

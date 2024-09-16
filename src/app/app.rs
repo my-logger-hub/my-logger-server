@@ -34,6 +34,8 @@ pub struct AppContext {
     pub hourly_statistics: Mutex<HourlyStatistics>,
 
     pub hour_statistics_repo: HourStatisticsRepo,
+
+    pub env_name: String,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -56,7 +58,10 @@ impl AppContext {
             }
         }
 
+        let env_name = settings_reader.get_env_name().await;
+
         Self {
+            env_name,
             app_states: Arc::new(AppStates::create_initialized()),
             logs_repo: LogsRepo::new(logs_db_path).await,
             logs_queue: LogsQueue::new(),

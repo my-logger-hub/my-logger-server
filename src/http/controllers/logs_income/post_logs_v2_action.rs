@@ -30,9 +30,7 @@ async fn handle_request(
     input_data: PostJsonLogsV2InputData,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    let default_tenant = action.app.settings_reader.get_default_tenant().await;
-
-    let log_events = input_data.parse_log_events(&default_tenant)?;
+    let log_events = input_data.parse_log_events()?;
 
     if log_events.len() > 0 {
         crate::flows::post_items(&action.app, log_events).await;

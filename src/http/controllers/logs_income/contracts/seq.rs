@@ -15,11 +15,11 @@ pub struct SeqInputHttpData {
 }
 
 impl SeqInputHttpData {
-    pub fn parse_log_events(&self, tenant: &str) -> Option<Vec<LogItem>> {
+    pub fn parse_log_events(&self) -> Option<Vec<LogItem>> {
         let mut result = LazyVec::new();
 
         for chunk in self.body.as_slice().split(|itm| *itm == 13u8) {
-            match LogItem::parse_as_seq_payload(chunk, tenant) {
+            match LogItem::parse_as_seq_payload(chunk) {
                 Ok(log_data) => {
                     result.add(log_data);
                 }
@@ -38,7 +38,7 @@ impl SeqInputHttpData {
 }
 
 impl LogItem {
-    pub fn parse_as_seq_payload(bytes: &[u8], tenant: &str) -> Result<Self, String> {
+    pub fn parse_as_seq_payload(bytes: &[u8]) -> Result<Self, String> {
         let mut ctx = BTreeMap::new();
 
         let mut timestamp = None;
@@ -122,7 +122,6 @@ impl LogItem {
         }
         Ok(Self {
             id: crate::utils::generate_log_id(),
-            tenant: tenant.to_string(),
             level,
             timestamp: if let Some(timestamp) = timestamp {
                 timestamp
@@ -148,7 +147,7 @@ mod tests {
 {"@l":"Info","@t":"2023-08-11T21:02:45.688846+00:00","Process":"TelemetryWriterTimer","@m":"Timer TelemetryWriterTimer is started with delay 1 sec","Application":"trx-wallet-grpc","Version":"0.1.0"}
 {"@l":"Info","@t":"2023-08-11T21:02:45.687863+00:00","Process":"Starting Http Server","@m":"Http server starts at: 0.0.0.0:8000","Application":"trx-wallet-grpc","Version":"0.1.0"}"#;
 
-        let item = LogItem::parse_as_seq_payload(src.as_bytes(), "test").unwrap();
+        let item = LogItem::parse_as_seq_payload(src.as_bytes()).unwrap();
 
         println!("item: {:?}", item);
     }

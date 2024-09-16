@@ -58,7 +58,6 @@ impl MyLogger for GrpcService {
             request.context_keys,
             from_date,
             to_date,
-            tenant_id.as_str(),
             request.take as usize,
         )
         .await;
@@ -73,7 +72,7 @@ impl MyLogger for GrpcService {
         &self,
         request: tonic::Request<GetStatisticsRequest>,
     ) -> Result<tonic::Response<StatisticData>, tonic::Status> {
-        let request = request.into_inner();
+        let _request = request.into_inner();
 
         /*
                let from_date = DateTimeAsMicroseconds::new(request.from_time);
@@ -84,7 +83,7 @@ impl MyLogger for GrpcService {
                    None
                };
         */
-        let response = self.app.logs_repo.get_statistics(&request.tenant_id).await;
+        let response = self.app.logs_repo.get_statistics().await;
 
         let mut result = StatisticData {
             info_count: 0,

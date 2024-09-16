@@ -32,13 +32,13 @@ pub async fn remove_ignore_event(app: &AppContext, event: IgnoreWhereModel) {
             &telegram_settings,
             &LogItem {
                 id: dt.to_rfc3339(),
-                tenant: "System".to_string(),
                 level: my_logger::LogLevel::Info,
                 process: None,
                 message: "Ignore event removed".to_string(),
                 timestamp: dt,
                 ctx,
             },
+            &app.env_name,
         )
         .await;
     }
