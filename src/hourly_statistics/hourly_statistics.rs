@@ -92,7 +92,7 @@ impl HourlyStatistics {
             self.to_persist.insert(key, BTreeMap::new());
         }
 
-        let by_date = self.data.get_mut(&key).unwrap();
+        let by_date = self.to_persist.get_mut(&key).unwrap();
 
         by_date.insert(app, itm);
     }
