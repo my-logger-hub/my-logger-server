@@ -105,6 +105,7 @@ impl LogsRepo {
 
         path.push_str("logs-");
         path.push_str(date_key.get_value().to_string().as_str());
+        path.push_str(".db");
         path
     }
 
