@@ -8,7 +8,7 @@ use crate::{
     cache::FilterEventsCache,
     hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
-    repo::{LogsRepo, SettingsRepo},
+    repo::{HourStatisticsRepo, LogsRepo, SettingsRepo},
 };
 
 use super::LogsQueue;
@@ -32,6 +32,8 @@ pub struct AppContext {
     pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
 
     pub hourly_statistics: Mutex<HourlyStatistics>,
+
+    pub hour_statistics_repo: HourStatisticsRepo,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -62,6 +64,12 @@ impl AppContext {
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
             hourly_statistics: Mutex::new(HourlyStatistics::new()),
+            hour_statistics_repo: HourStatisticsRepo::new(
+                settings_reader
+                    .get_logs_db_path("hour_statistics.db".into())
+                    .await,
+            )
+            .await,
             elastic: settings_reader
                 .get_elastic_settings()
                 .await

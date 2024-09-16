@@ -17,6 +17,11 @@ impl GcTimer {
 #[async_trait::async_trait]
 impl MyTimerTick for GcTimer {
     async fn tick(&self) {
+        {
+            let mut hourly_statistics = self.app.hourly_statistics.lock().await;
+            hourly_statistics.gc();
+        }
+
         let mut to_date = DateTimeAsMicroseconds::now();
         to_date.add_days(-1);
 

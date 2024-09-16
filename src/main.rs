@@ -49,6 +49,8 @@ async fn main() {
     gc_timer.register_timer("GcTimer", Arc::new(GcTimer::new(app.clone()).await));
     gc_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
+    crate::flows::init(&app).await;
+
     crate::grpc_server::start(app.clone());
 
     app.app_states.wait_until_shutdown().await;

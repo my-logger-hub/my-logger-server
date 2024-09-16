@@ -20,3 +20,15 @@ impl Into<StatisticsHour> for DateTimeAsMicroseconds {
         StatisticsHour(key)
     }
 }
+
+impl Into<StatisticsHour> for u64 {
+    fn into(self) -> StatisticsHour {
+        StatisticsHour(self)
+    }
+}
+
+impl Into<StatisticsHour> for i64 {
+    fn into(self) -> StatisticsHour {
+        StatisticsHour(self as u64)
+    }
+}

@@ -99,6 +99,8 @@ impl MyTimerTick for FlushToDbTimer {
                         .await;
                 }
             }
+
+            crate::flows::write_hour_statistics(&self.app).await;
         }
     }
 }
