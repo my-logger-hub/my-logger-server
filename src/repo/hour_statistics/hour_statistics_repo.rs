@@ -3,7 +3,7 @@ use my_sqlite::*;
 
 use crate::hourly_statistics::StatisticsHour;
 
-const TABLE_NAME: &str = "h-statistics";
+const TABLE_NAME: &str = "h_statistics";
 pub struct HourStatisticsRepo {
     sqlite: SqlLiteConnection,
 }
@@ -12,6 +12,7 @@ impl HourStatisticsRepo {
     pub async fn new(path: String) -> Self {
         Self {
             sqlite: SqlLiteConnectionBuilder::new(path)
+                .debug(true)
                 .create_table_if_no_exists::<HourStatisticsDto>(TABLE_NAME)
                 .build()
                 .await
@@ -44,10 +45,7 @@ impl HourStatisticsRepo {
             .await
             .unwrap();
 
-        result
-            .iter()
-            .map(|x| x.date_key.get_value().into())
-            .collect()
+        result.iter().map(|x| x.date_key.into()).collect()
     }
 }
 
@@ -84,5 +82,6 @@ pub struct GetTopKeysDbModel {
 #[derive(SelectDbEntity)]
 pub struct WhereDbByKeyModel {
     #[order_by_desc]
-    pub date_key: GroupByMax<i64>,
+    #[group_by]
+    pub date_key: u64,
 }
