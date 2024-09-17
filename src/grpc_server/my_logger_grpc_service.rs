@@ -157,6 +157,8 @@ impl MyLogger for GrpcService {
             RequestType::DateRange(from_date, to_date)
         };
 
+        println!("ScanAndSearchRequest in range: {:?}", range);
+
         let response = match range {
             RequestType::HourKey(date_hour_key) => {
                 self.app
@@ -295,6 +297,7 @@ impl MyLogger for GrpcService {
     }
 }
 
+#[derive(Debug)]
 pub enum RequestType {
     HourKey(DateHourKey),
     DateRange(DateTimeAsMicroseconds, DateTimeAsMicroseconds),
