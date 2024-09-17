@@ -71,6 +71,8 @@ impl MyLogger for GrpcService {
                 None
             };
 
+            println!("ReadLogEventRequest at hour: {:?}", date_key);
+
             self.app
                 .logs_repo
                 .get_from_certain_hour(date_key, levels, context, request.take as usize)
@@ -84,6 +86,15 @@ impl MyLogger for GrpcService {
                 None
             };
 
+            println!(
+                "ReadLogEventRequest at '{}'-'{}'",
+                from_date.to_rfc3339(),
+                if let Some(to_date) = to_date {
+                    to_date.to_rfc3339()
+                } else {
+                    "None".to_string()
+                }
+            );
             crate::flows::get_events(
                 &self.app,
                 levels,
@@ -141,7 +152,7 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ScanAndSearchStream>, tonic::Status> {
         let request = request.into_inner();
 
-        let range = if request.to_time == -1 {
+        let range = if request.to_time == 0 {
             if request.from_time < 0 {
                 let mut from_date = DateTimeAsMicroseconds::now();
                 from_date.add_minutes(request.from_time);
