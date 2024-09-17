@@ -70,8 +70,8 @@ message DeleteIgnoreEventGrpcRequest{
 message ScanAndSearchRequest{
     string TenantId = 1;
     string Phrase = 2;
-    uint64 FromTime = 3;
-    uint64 ToTime = 4;
+    int64 FromTime = 3;
+    int64 ToTime = 4;
     int32 Take = 5;
 }
 

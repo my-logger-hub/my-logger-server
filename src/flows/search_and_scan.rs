@@ -4,7 +4,6 @@ use crate::{app::AppContext, repo::dto::LogItemDto};
 
 pub async fn search_and_scan(
     app: &AppContext,
-    tenant: &str,
     from_date: DateTimeAsMicroseconds,
     to_date: DateTimeAsMicroseconds,
     phrase: &str,
@@ -12,7 +11,7 @@ pub async fn search_and_scan(
 ) -> Vec<LogItemDto> {
     let response = app
         .logs_repo
-        .scan(tenant, from_date, to_date, phrase, limit, app.is_debug)
+        .scan(from_date, to_date, phrase, limit, app.is_debug)
         .await;
 
     response

@@ -135,6 +135,12 @@ pub struct WhereScanModel {
     pub limit: usize,
 }
 
+#[where_raw_model("message LIKE '%${phrase}%' OR context LIKE '%${phrase}%'")]
+pub struct WhereNoDatesScanModel {
+    pub phrase: RawField,
+    pub limit: usize,
+}
+
 #[derive(WhereDbModel)]
 pub struct DeleteLevelWhereModel {
     #[operator("<=")]

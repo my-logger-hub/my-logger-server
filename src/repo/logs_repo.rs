@@ -244,7 +244,6 @@ impl LogsRepo {
 
     pub async fn scan(
         &self,
-        tenant: &str,
         from_date: DateTimeAsMicroseconds,
         to_date: DateTimeAsMicroseconds,
         phrase: &str,
@@ -267,7 +266,7 @@ impl LogsRepo {
         for date_key in files.keys().rev() {
             if debug {
                 println!(
-                    "Requesting from tenant:'{tenant}' file:'{}'. From: {}, to: {}",
+                    "Requesting search from file:'{}'. From: {}, to: {}",
                     date_key.get_value(),
                     from_date.to_rfc3339(),
                     to_date.to_rfc3339()
@@ -293,6 +292,32 @@ impl LogsRepo {
         }
 
         result
+    }
+
+    pub async fn scan_from_exact_hour(
+        &self,
+        hour_key: DateHourKey,
+        phrase: &str,
+        limit: usize,
+    ) -> Vec<LogItemDto> {
+        let where_model = WhereNoDatesScanModel {
+            phrase: RawField {
+                value: phrase.to_string(),
+            },
+            limit,
+        };
+
+        let sqlite = self.get_sqlite(hour_key).await;
+
+        if sqlite.is_none() {
+            return Vec::new();
+        }
+
+        let sqlite = sqlite.unwrap();
+        sqlite
+            .query_rows(TABLE_NAME, Some(&where_model))
+            .await
+            .unwrap()
     }
 
     pub async fn prepare_to_delete(&self, date_key: DateHourKey) {

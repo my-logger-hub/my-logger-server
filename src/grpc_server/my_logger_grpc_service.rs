@@ -44,7 +44,7 @@ impl MyLogger for GrpcService {
 
         let levels: Vec<_> = request.levels().collect();
 
-        let response = if request.to_time == -1 {
+        let response = if request.to_time == 0 {
             let date_key = if request.from_time < 255 {
                 let mut now = DateTimeAsMicroseconds::now();
                 now.add_hours(request.from_time);
@@ -141,20 +141,40 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ScanAndSearchStream>, tonic::Status> {
         let request = request.into_inner();
 
-        let from_date: DateTimeAsMicroseconds = request.from_time.into();
-        let to_date: DateTimeAsMicroseconds = request.to_time.into();
+        let range = if request.to_time == -1 {
+            if request.from_time < 0 {
+                let mut from_date = DateTimeAsMicroseconds::now();
+                from_date.add_minutes(request.from_time);
+                let key = DateHourKey::from(from_date);
+                RequestType::HourKey(key)
+            } else {
+                let key = DateHourKey::from(request.from_time);
+                RequestType::HourKey(key)
+            }
+        } else {
+            let from_date: DateTimeAsMicroseconds = request.from_time.into();
+            let to_date: DateTimeAsMicroseconds = request.to_time.into();
+            RequestType::DateRange(from_date, to_date)
+        };
 
-        let tenant_id = request.tenant_id;
-
-        let response = crate::flows::search_and_scan(
-            &self.app,
-            &tenant_id,
-            from_date,
-            to_date,
-            &request.phrase,
-            request.take as usize,
-        )
-        .await;
+        let response = match range {
+            RequestType::HourKey(date_hour_key) => {
+                self.app
+                    .logs_repo
+                    .scan_from_exact_hour(date_hour_key, &request.phrase, request.take as usize)
+                    .await
+            }
+            RequestType::DateRange(from_date, to_date) => {
+                crate::flows::search_and_scan(
+                    &self.app,
+                    from_date,
+                    to_date,
+                    &request.phrase,
+                    request.take as usize,
+                )
+                .await
+            }
+        };
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
             super::mapper::to_log_event_grpc_model(dto)
@@ -273,4 +293,9 @@ impl MyLogger for GrpcService {
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {
         Ok(tonic::Response::new(()))
     }
+}
+
+pub enum RequestType {
+    HourKey(DateHourKey),
+    DateRange(DateTimeAsMicroseconds, DateTimeAsMicroseconds),
 }
