@@ -45,7 +45,15 @@ impl MyLogger for GrpcService {
         let levels: Vec<_> = request.levels().collect();
 
         let response = if request.to_time == -1 {
-            let date_key: DateHourKey = request.from_time.into();
+            let date_key = if request.from_time < 255 {
+                let mut now = DateTimeAsMicroseconds::now();
+                now.add_hours(request.from_time);
+                let date_key: DateHourKey = now.into();
+                date_key
+            } else {
+                let date_key: DateHourKey = request.from_time.into();
+                date_key
+            };
 
             let levels = if levels.len() > 0 {
                 Some(levels.into_iter().map(|level| level.into()).collect())
