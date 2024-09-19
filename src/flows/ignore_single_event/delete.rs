@@ -1,6 +1,6 @@
-use crate::{app::AppContext, my_logger_grpc::*};
+use crate::app::AppContext;
 
-pub async fn add(app: &AppContext, item: IgnoreSingleEventGrpcModel) {
+pub async fn delete(app: &AppContext, id: String) {
     let mut write_access = app.ignore_single_event_cache.lock().await;
 
     if !write_access.initialized {
@@ -8,7 +8,7 @@ pub async fn add(app: &AppContext, item: IgnoreSingleEventGrpcModel) {
         write_access.init(items.clone());
     }
 
-    write_access.add(item.clone());
+    write_access.delete(&id);
 
     super::persistence::save(app).await;
 }

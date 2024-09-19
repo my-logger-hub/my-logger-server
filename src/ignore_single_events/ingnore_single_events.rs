@@ -11,11 +11,15 @@ pub struct IgnoreSingleEventItem {
 
 pub struct IgnoreSingleEventCache {
     data: Vec<IgnoreSingleEventItem>,
+    pub initialized: bool,
 }
 
 impl IgnoreSingleEventCache {
     pub fn new() -> Self {
-        Self { data: Vec::new() }
+        Self {
+            data: Vec::new(),
+            initialized: false,
+        }
     }
 
     pub fn add(&mut self, item: IgnoreSingleEventGrpcModel) {
@@ -24,6 +28,14 @@ impl IgnoreSingleEventCache {
             item,
             prev_events: vec![],
         });
+    }
+
+    pub fn init(&mut self, items: Vec<IgnoreSingleEventGrpcModel>) {
+        for item in items {
+            self.add(item);
+        }
+
+        self.initialized = true;
     }
 
     pub fn get_all(&self) -> Vec<IgnoreSingleEventGrpcModel> {

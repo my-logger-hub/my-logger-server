@@ -247,7 +247,7 @@ impl MyLogger for GrpcService {
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<Self::GetIgnoreSingleEventsStream>, tonic::Status> {
-        let result = self.app.ignore_single_event_cache.lock().await.get_all();
+        let result = crate::flows::ignore_single_event::get_all(&self.app).await;
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(result.into_iter(), |dto| dto.into())
             .await
@@ -258,11 +258,8 @@ impl MyLogger for GrpcService {
         request: tonic::Request<DeleteIgnoreSingleEventGrpcRequest>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
-        self.app
-            .ignore_single_event_cache
-            .lock()
-            .await
-            .delete(&request.id);
+
+        crate::flows::ignore_single_event::delete(&self.app, request.id).await;
         return Ok(tonic::Response::new(()));
     }
 
