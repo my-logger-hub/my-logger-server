@@ -10,5 +10,5 @@ pub async fn add(app: &AppContext, item: IgnoreSingleEventGrpcModel) {
 
     write_access.add(item.clone());
 
-    super::persistence::save(app).await;
+    super::persistence::save(app, write_access.get_all()).await;
 }

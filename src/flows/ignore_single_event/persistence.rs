@@ -6,9 +6,7 @@ use crate::{app::AppContext, my_logger_grpc::*};
 
 const FILE_NAME: &'static str = "one-time-skip.yaml";
 
-pub async fn save(app: &AppContext) {
-    let items = app.ignore_single_event_cache.lock().await.get_all();
-
+pub async fn save(app: &AppContext, items: Vec<IgnoreSingleEventGrpcModel>) {
     let items_to_save: Vec<IgnoreSingleEventFileModel> =
         items.into_iter().map(|itm| itm.into()).collect();
 

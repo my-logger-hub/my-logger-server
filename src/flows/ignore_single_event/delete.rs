@@ -10,5 +10,5 @@ pub async fn delete(app: &AppContext, id: String) {
 
     write_access.delete(&id);
 
-    super::persistence::save(app).await;
+    super::persistence::save(app, write_access.get_all()).await;
 }
