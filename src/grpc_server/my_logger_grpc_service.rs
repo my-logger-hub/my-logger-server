@@ -238,7 +238,7 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
 
-        self.app.ignore_single_event_cache.lock().await.add(request);
+        crate::flows::ignore_single_event::add(&self.app, request).await;
         return Ok(tonic::Response::new(()));
     }
 

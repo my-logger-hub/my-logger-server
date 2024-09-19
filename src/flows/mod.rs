@@ -12,3 +12,4 @@ mod write_hour_statistics;
 pub use write_hour_statistics::*;
 mod init;
 pub use init::*;
+pub mod ignore_single_event;
