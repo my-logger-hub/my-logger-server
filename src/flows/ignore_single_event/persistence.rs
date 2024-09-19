@@ -16,6 +16,8 @@ pub async fn save(app: &AppContext) {
 
     let file_name = app.settings_reader.get_logs_db_path(FILE_NAME.into()).await;
 
+    println!("Saving ignore_single_event to {:?}", file_name);
+
     tokio::fs::write(file_name, as_yaml).await.unwrap();
 }
 
