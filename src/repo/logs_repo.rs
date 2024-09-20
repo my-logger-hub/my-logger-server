@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use super::{dto::*, DateHourKey};
 
 const TABLE_NAME: &str = "logs";
+pub const LOG_FILE_PREFIX: &str = "logs-";
 //const PK_NAME: &str = "logs_pk";
 
 //const MAX_POOL_SIZE: usize = 10;
@@ -103,7 +104,7 @@ impl LogsRepo {
     pub fn compile_file_name(&self, date_key: DateHourKey) -> String {
         let mut path = self.path.clone();
 
-        path.push_str("logs-");
+        path.push_str(LOG_FILE_PREFIX);
         path.push_str(date_key.get_value().to_string().as_str());
         path
     }

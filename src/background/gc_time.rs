@@ -2,7 +2,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use rust_extensions::{date_time::DateTimeAsMicroseconds, str_utils::StrUtils, MyTimerTick};
 
-use crate::{app::AppContext, repo::DateHourKey};
+use crate::{
+    app::AppContext,
+    repo::{DateHourKey, LOG_FILE_PREFIX},
+};
 
 pub struct GcTimer {
     pub app: Arc<AppContext>,
@@ -62,7 +65,7 @@ async fn gc_files(app: &AppContext) {
     let gc_date_key = DateTimeAsMicroseconds::now().sub(gc_from);
     let gc_date_key: DateHourKey = gc_date_key.into();
 
-    let mut to_gc = BTreeMap::new();
+    let mut to_gc = Vec::new();
     for file_name in files {
         let file_to_process = check_if_file_name_with_logs(&file_name);
         if file_to_process.is_none() {
@@ -75,17 +78,16 @@ async fn gc_files(app: &AppContext) {
             continue;
         }
 
-        let (tenant, date_key) = file_to_process.unwrap();
+        let date_key = file_to_process.unwrap();
 
         if date_key <= gc_date_key {
-            to_gc.insert(date_key, tenant);
+            to_gc.push(date_key);
         }
     }
 
-    for (date_key, tenant) in to_gc {
+    for date_key in to_gc {
         println!(
-            "Doing GC for tenant {} with date_key {}",
-            tenant,
+            "Doing GC for log file with date_key {}",
             date_key.get_value()
         );
 
@@ -100,10 +102,21 @@ async fn gc_files(app: &AppContext) {
     }
 }
 
-fn check_if_file_name_with_logs(file_name: &str) -> Option<(String, DateHourKey)> {
-    let (left_element, right_element) = file_name.split_exact_to_2_lines("-")?;
+fn check_if_file_name_with_logs(file_name: &str) -> Option<DateHourKey> {
+    if !file_name.starts_with(LOG_FILE_PREFIX) {
+        return None;
+    }
 
-    let date_component = DateHourKey::parse_from_str(right_element)?;
+    let date_key_as_string = &file_name[LOG_FILE_PREFIX.len()..];
 
-    return (left_element.to_string(), date_component).into();
+    let date_component = DateHourKey::parse_from_str(date_key_as_string);
+
+    if date_component.is_none() {
+        println!(
+            "Somehow file {} has wrong date_key_as_string='{}'",
+            file_name, date_key_as_string
+        );
+    }
+
+    return date_component;
 }
