@@ -65,6 +65,8 @@ async fn gc_files(app: &AppContext) {
     let gc_date_key = DateTimeAsMicroseconds::now().sub(gc_from);
     let gc_date_key: DateHourKey = gc_date_key.into();
 
+    println!("GC from date_key: {}", gc_date_key.get_value());
+
     let mut to_gc = Vec::new();
     for file_name in files {
         let file_to_process = check_if_file_name_with_logs(&file_name);
@@ -86,11 +88,6 @@ async fn gc_files(app: &AppContext) {
     }
 
     for date_key in to_gc {
-        println!(
-            "Doing GC for log file with date_key {}",
-            date_key.get_value()
-        );
-
         let file_name = app.logs_repo.compile_file_name(date_key);
         app.logs_repo.prepare_to_delete(date_key).await;
 
@@ -104,6 +101,7 @@ async fn gc_files(app: &AppContext) {
 
 fn check_if_file_name_with_logs(file_name: &str) -> Option<DateHourKey> {
     if !file_name.starts_with(LOG_FILE_PREFIX) {
+        println!("{}is not log file at all", file_name);
         return None;
     }
 
