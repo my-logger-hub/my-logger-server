@@ -101,7 +101,6 @@ async fn gc_files(app: &AppContext) {
 
 fn check_if_file_name_with_logs(file_name: &str) -> Option<DateHourKey> {
     if !file_name.starts_with(LOG_FILE_PREFIX) {
-        println!("{}is not log file at all", file_name);
         return None;
     }
 
