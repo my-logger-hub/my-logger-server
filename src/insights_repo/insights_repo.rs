@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 pub struct InsightsRepo {
     data: Mutex<HashMap<String, Vec<String>>>,
-    pub max_value_size: usize,
+    max_value_size: usize,
 }
 
 impl InsightsRepo {
@@ -30,6 +30,9 @@ impl InsightsRepo {
         let mut data = self.data.lock().await;
 
         for (key, value) in key_value {
+            if value.len() > self.max_value_size {
+                continue;
+            }
             if let Some(values) = data.get_mut(key) {
                 if values.contains(value) {
                     continue;
