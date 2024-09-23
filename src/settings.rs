@@ -34,6 +34,9 @@ pub struct SettingsModel {
 
     #[serde(rename = "EnvName")]
     pub env_name: String,
+
+    #[serde(rename = "InsightsKeys")]
+    pub insights_keys: Option<Vec<String>>,
 }
 
 impl SettingsReader {
@@ -45,6 +48,11 @@ impl SettingsReader {
     pub async fn get_env_name(&self) -> String {
         let read_access = self.settings.read().await;
         read_access.env_name.clone()
+    }
+
+    pub async fn get_insights_keys(&self) -> Vec<String> {
+        let read_access = self.settings.read().await;
+        read_access.insights_keys.clone().unwrap_or_default()
     }
 
     pub async fn get_elastic_settings(&self) -> Option<ElasticSettings> {

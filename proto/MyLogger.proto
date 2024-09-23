@@ -103,6 +103,19 @@ message HourlyStatisticsGrpcModel{
     uint32 DebugCount = 7;
 }
 
+message GetInsightsKeysResponse{
+    repeated string Keys = 1;
+}
+
+message GetInsightsValuesRequest{
+    string Key = 1;
+    string Phrase = 2;
+}
+
+message GetInsightsValuesResponse{
+    repeated string Values = 1;
+}
+
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
     rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
@@ -114,6 +127,8 @@ service MyLogger {
     rpc GetIgnoreEvents(google.protobuf.Empty) returns (stream IgnoreEventGrpcModel);
     rpc DeleteIgnoreEvent(DeleteIgnoreEventGrpcRequest) returns (google.protobuf.Empty);
 
+    rpc GetInsightsKeys(google.protobuf.Empty) returns (GetInsightsKeysResponse);
+    rpc GetInsightsValues(GetInsightsValuesRequest) returns ( GetInsightsValuesResponse);
 
     rpc SetIgnoreSingleEvent(IgnoreSingleEventGrpcModel) returns (google.protobuf.Empty);
     rpc GetIgnoreSingleEvents(google.protobuf.Empty) returns (stream IgnoreSingleEventGrpcModel);

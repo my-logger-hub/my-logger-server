@@ -12,6 +12,7 @@ mod grpc_server;
 mod hourly_statistics;
 mod http;
 mod ignore_single_events;
+mod insights_repo;
 mod repo;
 mod settings;
 mod telegram_api;

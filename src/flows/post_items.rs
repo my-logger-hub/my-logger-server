@@ -16,6 +16,10 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
         return;
     }
 
+    for log_event in log_events.iter() {
+        app.insights_repo.try_insert_values(&log_event.ctx).await;
+    }
+
     if let Some(elastic) = &app.elastic {
         elastic.logs_queue.add(log_events.clone()).await;
     }

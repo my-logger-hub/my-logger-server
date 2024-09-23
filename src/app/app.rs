@@ -8,6 +8,7 @@ use crate::{
     cache::FilterEventsCache,
     hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
+    insights_repo::InsightsRepo,
     repo::{HourStatisticsRepo, LogsRepo, SettingsRepo},
 };
 
@@ -30,6 +31,8 @@ pub struct AppContext {
     pub elastic: Option<ElasticInner>,
     pub is_debug: bool,
     pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
+
+    pub insights_repo: InsightsRepo,
 
     pub hourly_statistics: Mutex<HourlyStatistics>,
 
@@ -60,6 +63,10 @@ impl AppContext {
 
         let env_name = settings_reader.get_env_name().await;
 
+        let insight_keys = settings_reader.get_insights_keys().await;
+
+        let insights_repo = InsightsRepo::new(insight_keys, 1024);
+
         Self {
             env_name,
             app_states: Arc::new(AppStates::create_initialized()),
@@ -88,6 +95,7 @@ impl AppContext {
                 }),
             settings_reader,
             is_debug,
+            insights_repo,
         }
     }
 }

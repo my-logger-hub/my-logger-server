@@ -300,6 +300,36 @@ impl MyLogger for GrpcService {
         Ok(result)
     }
 
+    async fn get_insights_keys(
+        &self,
+        request: tonic::Request<()>,
+    ) -> Result<tonic::Response<GetInsightsKeysResponse>, tonic::Status> {
+        let _request = request.into_inner();
+
+        let keys = self.app.insights_repo.get_keys().await;
+
+        let result = GetInsightsKeysResponse { keys };
+
+        Ok(tonic::Response::new(result))
+    }
+
+    async fn get_insights_values(
+        &self,
+        request: tonic::Request<GetInsightsValuesRequest>,
+    ) -> Result<tonic::Response<GetInsightsValuesResponse>, tonic::Status> {
+        let request = request.into_inner();
+
+        let values = self
+            .app
+            .insights_repo
+            .get_values(request.key.as_str(), request.phrase.as_str(), 20)
+            .await;
+
+        let result = GetInsightsValuesResponse { values };
+
+        Ok(tonic::Response::new(result))
+    }
+
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {
         Ok(tonic::Response::new(()))
     }
