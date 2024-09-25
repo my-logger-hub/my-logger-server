@@ -60,6 +60,11 @@ impl SettingsReader {
         read_access.elastic.clone()
     }
 
+    pub async fn get_hours_to_gc(&self) -> u64 {
+        let read_access = self.settings.read().await;
+        read_access.hours_to_gc
+    }
+
     pub async fn get_duration_to_gc(&self) -> Duration {
         let read_access = self.settings.read().await;
         Duration::from_secs(60 * 60 * read_access.hours_to_gc as u64)

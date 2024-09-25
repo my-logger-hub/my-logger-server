@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::server::GrpcService;
+use crate::app::APP_VERSION;
 use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
 use crate::repo::dto::IgnoreWhereModel;
@@ -328,6 +329,18 @@ impl MyLogger for GrpcService {
         let result = GetInsightsValuesResponse { values };
 
         Ok(tonic::Response::new(result))
+    }
+
+    async fn get_server_info(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<ServerInfoGrpcResponse>, tonic::Status> {
+        let response = ServerInfoGrpcResponse {
+            version: APP_VERSION.to_string(),
+            hours_to_gc: self.app.settings_reader.get_hours_to_gc().await as u32,
+        };
+
+        Ok(tonic::Response::new(response))
     }
 
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {

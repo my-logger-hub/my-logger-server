@@ -116,6 +116,12 @@ message GetInsightsValuesResponse{
     repeated string Values = 1;
 }
 
+
+message ServerInfoGrpcResponse{
+    string Version = 1;
+    uint32 HoursToGc = 2;
+}
+
 service MyLogger {
     rpc Write(stream LogEventGrpcModel) returns (google.protobuf.Empty);
     rpc Read(ReadLogEventRequest) returns (stream LogEventGrpcModel);
@@ -135,6 +141,9 @@ service MyLogger {
     rpc DeleteIgnoreSingleEvent(DeleteIgnoreSingleEventGrpcRequest) returns (google.protobuf.Empty);
 
     rpc GetHourlyStatistics(GetHourlyStatisticsRequest) returns (stream HourlyStatisticsGrpcModel);
+
+
+    rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoGrpcResponse);
 
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }
