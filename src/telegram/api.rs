@@ -35,7 +35,7 @@ pub async fn send_notification_data(
         (
             "text",
             format!(
-                "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n*FatalErrors*: {}\n*Errors*: {}\n*Warnings*: {}\n",
+                "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n☠️*FatalErrors*: {}\n🟥*Errors*: {}\n⚠️*Warnings*: {}\n",
                 env_name,
                 time_interval.to_rfc3339(),
                 notification_data.fatal_errors,
