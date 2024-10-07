@@ -116,7 +116,7 @@ impl TelegramNotificationData {
         let mut result_key = None;
 
         for item_key in self.items.keys() {
-            if *item_key <= key_to_send.to_i64() {
+            if *item_key < key_to_send.to_i64() {
                 result_key = Some(*item_key);
             }
 
