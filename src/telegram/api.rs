@@ -20,6 +20,10 @@ pub async fn send_notification_data(
     env_name: &str,
     ui_url: String,
 ) {
+
+    if notification_data.fatal_errors ==0 && notification_data.errors == 0{
+        return;
+    }
     let url = format!(
         "https://api.telegram.org/bot{}/sendMessage",
         telegram_settings.api_key
