@@ -121,7 +121,11 @@ impl MyLogger for GrpcService {
         &self,
         request: tonic::Request<GetStatisticsRequest>,
     ) -> Result<tonic::Response<StatisticData>, tonic::Status> {
-        let _request = request.into_inner();
+        let request = request.into_inner();
+
+        if is_valid_url_to_update(request.ui_url.as_str()) {
+            self.app.update_ui_url(request.ui_url.as_str()).await;
+        }
 
         let response = self.app.logs_repo.get_statistics().await;
 
@@ -364,5 +368,5 @@ pub enum RequestType {
 }
 
 pub fn is_valid_url_to_update(url: &str) -> bool {
-    url.starts_with("https://")
+    url.starts_with("https")
 }
