@@ -106,6 +106,14 @@ impl LogItem {
                         .to_string();
                     message = Some(value);
                 }
+                "@mt" => {
+                    let value = line
+                        .value
+                        .as_str(&json_first_line_reader)
+                        .unwrap()
+                        .to_string();
+                    message = Some(value);
+                }
                 _ => {
                     let value = line
                         .value
