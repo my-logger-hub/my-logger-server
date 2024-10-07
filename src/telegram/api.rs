@@ -32,11 +32,11 @@ pub async fn send_notification_data(
     let ui_url = if ui_url.is_empty() {
         "".to_string()
     } else {
-        format!("[Logs]({})", ui_url)
+        format!("<a href=\"{}\">LogsUi</a>", ui_url)
     };
 
     let telegram_statistics = format!(
-        "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n☠️*FatalErrors*: {}\n🟥*Errors*: {}\n⚠️*Warnings*: {}\n{}\n",
+        "---\n📊<b>EnvInfo</b>:{}\n<b>Statistics of minute</b>: {}\n☠️<b>FatalErrors</b>: {}\n🟥<b>Errors</b>: {}\n⚠️<b>Warnings</b>: {}\n{}\n",
         env_name,
         time_interval.to_rfc3339(),
         notification_data.fatal_errors,
@@ -53,7 +53,7 @@ pub async fn send_notification_data(
             "message_thread_id",
             telegram_settings.message_thread_id.to_string(),
         ),
-        ("parse_mode", "Markdown".to_string()),
+        ("parse_mode", "HTML".to_string()),
         (
             "text",
             telegram_statistics,
@@ -100,7 +100,7 @@ pub async fn send_log_item(
         (
             "text",
             format!(
-                "---\n{}\n{}\n*EnvInfo*:{}\n*Process*: {}\n*Msg*: {}\n```Context:\n{}\n```\n",
+                "---\n{}\n{}\n<b>EnvInfo</b>:{}\n<b>Process</b>: {}\n<b>Msg</b>: {}\n```Context:\n{}\n```\n",
                 log_item.timestamp.to_rfc3339(),
                 log_item_level_to_telegram_str(&log_item),
                 format_telegram_message(env_name),
