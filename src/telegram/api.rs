@@ -27,6 +27,14 @@ pub async fn send_notification_data(
 
 
     let time_interval: DateTimeAsMicroseconds = notification_data.key.clone().try_into().unwrap();
+
+
+    let ui_url = if ui_url.is_empty() {
+        "".to_string()
+    } else {
+        format!("[Logs]({})", ui_url)
+    };
+
     let params = [
         ("chat_id", telegram_settings.chat_id.to_string()),
         (
