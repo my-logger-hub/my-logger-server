@@ -32,6 +32,7 @@ impl MyTimerTick for NotifyTelegramTimer {
         let telegram_settings = self.app.settings_reader.get_telegram_settings().await;
 
         if telegram_settings.is_none() {
+            println!("Telegram is disabled");
             return;
         }
 
