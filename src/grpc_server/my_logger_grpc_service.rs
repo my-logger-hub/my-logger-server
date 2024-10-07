@@ -43,6 +43,10 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ReadStream>, tonic::Status> {
         let request = request.into_inner();
 
+        if is_valid_url_to_update(request.ui_url.as_str()) {
+            self.app.update_ui_url(request.ui_url.as_str()).await;
+        }
+
         let levels: Vec<_> = request.levels().collect();
 
         let response = if request.to_time == 0 {
@@ -153,6 +157,10 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ScanAndSearchStream>, tonic::Status> {
         let request = request.into_inner();
 
+        if is_valid_url_to_update(request.ui_url.as_str()) {
+            self.app.update_ui_url(request.ui_url.as_str()).await;
+        }
+
         let range = if request.to_time == 0 {
             if request.from_time < 0 {
                 let mut from_date = DateTimeAsMicroseconds::now();
@@ -201,6 +209,7 @@ impl MyLogger for GrpcService {
         request: tonic::Request<IgnoreEventGrpcModel>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
+
         crate::flows::add_ignore_event(&self.app, request.into()).await;
         return Ok(tonic::Response::new(()));
     }
@@ -352,4 +361,8 @@ impl MyLogger for GrpcService {
 pub enum RequestType {
     HourKey(DateHourKey),
     DateRange(DateTimeAsMicroseconds, DateTimeAsMicroseconds),
+}
+
+pub fn is_valid_url_to_update(url: &str) -> bool {
+    url.starts_with("https://")
 }

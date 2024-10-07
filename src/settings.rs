@@ -35,6 +35,9 @@ pub struct SettingsModel {
     #[serde(rename = "EnvName")]
     pub env_name: String,
 
+    #[serde(rename = "UiUrl")]
+    pub ui_url: Option<String>,
+
     #[serde(rename = "InsightsKeys")]
     pub insights_keys: Option<Vec<String>>,
 }

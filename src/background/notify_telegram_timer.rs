@@ -38,10 +38,13 @@ impl MyTimerTick for NotifyTelegramTimer {
 
         let telegram_settings = telegram_settings.unwrap();
 
+        let ui_url = self.app.get_ui_url().await;
+
         crate::telegram::api::send_notification_data(
             &telegram_settings,
             &to_telegram,
             &self.app.env_name,
+            ui_url,
         )
         .await;
     }

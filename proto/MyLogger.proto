@@ -26,13 +26,13 @@ message LogEventContext{
 }
 
 message GetStatisticsRequest{
-    string TenantId = 1;
+    string UiUrl = 1;
     int64 FromTime =2;
     int64 ToTime =3;
 }
 
 message ReadLogEventRequest{
-    string TenantId = 1;
+    string UiUrl = 1;
     int64 FromTime =2;
     int64 ToTime =3;
     int32 Take = 4;
@@ -42,7 +42,7 @@ message ReadLogEventRequest{
 }
 
 message GetStatisticRequest{
-    string TenantId = 1;
+    string UiUrl = 1;
     int64 FromTime =2;
     int64 ToTime =3;
 }
@@ -68,7 +68,7 @@ message DeleteIgnoreEventGrpcRequest{
 }
 
 message ScanAndSearchRequest{
-    string TenantId = 1;
+    string UiUrl = 1;
     string Phrase = 2;
     int64 FromTime = 3;
     int64 ToTime = 4;

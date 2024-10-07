@@ -42,6 +42,8 @@ pub struct AppContext {
     pub hour_statistics_repo: HourStatisticsRepo,
 
     pub env_name: String,
+
+    pub ui_url: Mutex<String>,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -100,6 +102,19 @@ impl AppContext {
             is_debug,
             insights_repo,
             telegram_notification_data: Mutex::new(TelegramNotificationData::new()),
+            ui_url: Mutex::new(String::new()),
         }
+    }
+
+    pub async fn update_ui_url(&self, ui_url: &str) {
+        let mut write_access = self.ui_url.lock().await;
+        if &*write_access != ui_url {
+            *write_access = ui_url.to_string()
+        }
+    }
+
+    pub async fn get_ui_url(&self) -> String {
+        let read_access = self.ui_url.lock().await;
+        read_access.clone()
     }
 }

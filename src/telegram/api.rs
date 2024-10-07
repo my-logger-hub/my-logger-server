@@ -2,7 +2,7 @@ use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::{app::LogItem, settings::TelegramSettings};
 
-use super::{NotificationItem};
+use super::NotificationItem;
 
 pub fn log_item_level_to_telegram_str(log_item: &LogItem) -> &str {
     match &log_item.level {
@@ -18,11 +18,13 @@ pub async fn send_notification_data(
     telegram_settings: &TelegramSettings,
     notification_data: &NotificationItem,
     env_name: &str,
+    ui_url: String,
 ) {
     let url = format!(
         "https://api.telegram.org/bot{}/sendMessage",
         telegram_settings.api_key
     );
+
 
     let time_interval: DateTimeAsMicroseconds = notification_data.key.clone().try_into().unwrap();
     let params = [
@@ -35,12 +37,13 @@ pub async fn send_notification_data(
         (
             "text",
             format!(
-                "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n☠️*FatalErrors*: {}\n🟥*Errors*: {}\n⚠️*Warnings*: {}\n",
+                "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n☠️*FatalErrors*: {}\n🟥*Errors*: {}\n⚠️*Warnings*: {}\n{}\n",
                 env_name,
                 time_interval.to_rfc3339(),
                 notification_data.fatal_errors,
                 notification_data.errors,
                 notification_data.warnings,                
+                ui_url
             ),
         ),
     ];
@@ -53,6 +56,7 @@ pub async fn send_notification_data(
         .unwrap();
 
     let _ = client.post(&url).form(&params).send().await;
+    
 
     println!("Minute Statistics{:?}", notification_data);
 }
