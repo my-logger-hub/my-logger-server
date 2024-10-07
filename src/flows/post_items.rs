@@ -7,8 +7,10 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
 
     {
         let mut hourly_statistics = app.hourly_statistics.lock().await;
+        let mut telegram_notification_data = app.telegram_notification_data.lock().await;
         for itm in log_events.iter() {
             hourly_statistics.update(&itm);
+            telegram_notification_data.update(&itm);
         }
     }
 

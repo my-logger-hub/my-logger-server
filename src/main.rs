@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use app::AppContext;
-use background::{FlushToDbTimer, FlushToElastic, GcTimer};
+use background::*;
 use rust_extensions::MyTimer;
 
 mod app;
@@ -15,7 +15,7 @@ mod ignore_single_events;
 mod insights_repo;
 mod repo;
 mod settings;
-mod telegram_api;
+mod telegram;
 mod utils;
 #[allow(non_snake_case)]
 pub mod my_logger_grpc {
@@ -48,6 +48,10 @@ async fn main() {
 
     let mut gc_timer = MyTimer::new(Duration::from_secs(30));
     gc_timer.register_timer("GcTimer", Arc::new(GcTimer::new(app.clone()).await));
+    gc_timer.register_timer(
+        "TelegramPusher",
+        Arc::new(NotifyTelegramTimer::new(app.clone())),
+    );
     gc_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
     crate::flows::init(&app).await;

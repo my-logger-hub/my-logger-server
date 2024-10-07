@@ -10,6 +10,7 @@ use crate::{
     ignore_single_events::IgnoreSingleEventCache,
     insights_repo::InsightsRepo,
     repo::{HourStatisticsRepo, LogsRepo, SettingsRepo},
+    telegram::TelegramNotificationData,
 };
 
 use super::LogsQueue;
@@ -31,6 +32,8 @@ pub struct AppContext {
     pub elastic: Option<ElasticInner>,
     pub is_debug: bool,
     pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
+
+    pub telegram_notification_data: Mutex<TelegramNotificationData>,
 
     pub insights_repo: InsightsRepo,
 
@@ -96,6 +99,7 @@ impl AppContext {
             settings_reader,
             is_debug,
             insights_repo,
+            telegram_notification_data: Mutex::new(TelegramNotificationData::new()),
         }
     }
 }

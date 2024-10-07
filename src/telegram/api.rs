@@ -1,4 +1,8 @@
+use rust_extensions::date_time::DateTimeAsMicroseconds;
+
 use crate::{app::LogItem, settings::TelegramSettings};
+
+use super::{NotificationItem};
 
 pub fn log_item_level_to_telegram_str(log_item: &LogItem) -> &str {
     match &log_item.level {
@@ -10,6 +14,48 @@ pub fn log_item_level_to_telegram_str(log_item: &LogItem) -> &str {
     }
 }
 
+pub async fn send_notification_data(
+    telegram_settings: &TelegramSettings,
+    notification_data: &NotificationItem,
+    env_name: &str,
+) {
+    let url = format!(
+        "https://api.telegram.org/bot{}/sendMessage",
+        telegram_settings.api_key
+    );
+
+    let time_interval: DateTimeAsMicroseconds = notification_data.key.clone().try_into().unwrap();
+    let params = [
+        ("chat_id", telegram_settings.chat_id.to_string()),
+        (
+            "message_thread_id",
+            telegram_settings.message_thread_id.to_string(),
+        ),
+        ("parse_mode", "Markdown".to_string()),
+        (
+            "text",
+            format!(
+                "---\n*EnvInfo*:{}\n*Statistics of minute*: {}\n*FatalErrors*: {}\n*Errors*: {}\n*Warnings*: {}\n",
+                env_name,
+                time_interval.to_rfc3339(),
+                notification_data.fatal_errors,
+                notification_data.errors,
+                notification_data.warnings,                
+            ),
+        ),
+    ];
+
+    // Create a client and send a POST request to the API
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap();
+
+    let response = client.post(&url).form(&params).send().await;
+
+    println!("Minute Statistics{:?}", notification_data);
+}
 // Define a function to send a message using the Telegram Bot API
 pub async fn send_log_item(
     telegram_settings: &TelegramSettings,

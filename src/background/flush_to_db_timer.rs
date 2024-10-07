@@ -45,23 +45,6 @@ impl FlushToDbTimer {
         if telegram_settings.is_none() {
             return;
         }
-
-        let telegram_settings = telegram_settings.unwrap();
-
-        for itm in to_send {
-            let skip = {
-                self.app
-                    .ignore_single_event_cache
-                    .lock()
-                    .await
-                    .skip_by_filtering(itm.as_ref())
-            };
-
-            if !skip {
-                crate::telegram_api::send_log_item(&telegram_settings, itm, &self.app.env_name)
-                    .await;
-            }
-        }
     }
 }
 
