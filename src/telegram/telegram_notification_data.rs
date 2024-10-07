@@ -111,7 +111,7 @@ impl TelegramNotificationData {
     ) -> Option<NotificationItem> {
         now.add_minutes(-1);
 
-        let key_to_send: IntervalKey<HourKey> = now.into();
+        let key_to_send: IntervalKey<MinuteKey> = now.into();
 
         let mut result_key = None;
 
