@@ -35,6 +35,18 @@ pub async fn send_notification_data(
         format!("[Logs]({})", ui_url)
     };
 
+    let telegram_statistics = format!(
+        "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n☠️*FatalErrors*: {}\n🟥*Errors*: {}\n⚠️*Warnings*: {}\n{}\n",
+        env_name,
+        time_interval.to_rfc3339(),
+        notification_data.fatal_errors,
+        notification_data.errors,
+        notification_data.warnings,                
+        ui_url
+    );
+
+    println!("Sending telegram stats: {}", telegram_statistics);
+
     let params = [
         ("chat_id", telegram_settings.chat_id.to_string()),
         (
@@ -44,15 +56,7 @@ pub async fn send_notification_data(
         ("parse_mode", "Markdown".to_string()),
         (
             "text",
-            format!(
-                "---\n📊*EnvInfo*:{}\n*Statistics of minute*: {}\n☠️*FatalErrors*: {}\n🟥*Errors*: {}\n⚠️*Warnings*: {}\n{}\n",
-                env_name,
-                time_interval.to_rfc3339(),
-                notification_data.fatal_errors,
-                notification_data.errors,
-                notification_data.warnings,                
-                ui_url
-            ),
+            telegram_statistics,
         ),
     ];
 
