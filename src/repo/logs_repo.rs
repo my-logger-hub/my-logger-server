@@ -311,6 +311,7 @@ impl LogsRepo {
         let sqlite = self.get_sqlite(hour_key).await;
 
         if sqlite.is_none() {
+            println!("No sqlite from hour: {}", hour_key.get_value());
             return Vec::new();
         }
 
