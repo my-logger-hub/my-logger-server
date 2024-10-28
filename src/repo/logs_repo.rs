@@ -314,6 +314,8 @@ impl LogsRepo {
             return Vec::new();
         }
 
+        println!("Doing scan from exact hour: {}", hour_key.get_value());
+
         let sqlite = sqlite.unwrap();
         sqlite
             .query_rows(TABLE_NAME, Some(&where_model))
