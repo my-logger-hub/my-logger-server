@@ -166,7 +166,7 @@ impl MyLogger for GrpcService {
         }
 
         let range = if request.to_time == 0 {
-            if request.from_time < 0 {
+            if request.from_time < 255 {
                 let mut from_date = DateTimeAsMicroseconds::now();
                 from_date.add_minutes(request.from_time);
                 let key = DateHourKey::from(from_date);

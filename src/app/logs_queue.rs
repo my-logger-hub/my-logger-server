@@ -58,7 +58,7 @@ impl LogsQueue {
     }
 
     pub async fn add(&self, items: Vec<Arc<LogItem>>) {
-        println!("Added events: {}", items.len());
+        //println!("Added events: {}", items.len());
 
         let mut write_access = self.queue.lock().await;
         if write_access.is_none() {
