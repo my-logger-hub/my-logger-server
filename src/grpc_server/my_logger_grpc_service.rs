@@ -167,7 +167,7 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let range = RequestType::from(request.from_time, request.to_time);
+        let range = RequestType::from_scan_request(request.from_time, request.to_time);
 
         println!("ScanAndSearchRequest in range: {:?}", range);
 
@@ -356,9 +356,9 @@ pub enum RequestType {
 }
 
 impl RequestType {
-    pub fn from(from_time: i64, to_time: i64) -> Self {
+    pub fn from_scan_request(from_time: i64, to_time: i64) -> Self {
         if to_time == 0 {
-            let date_key = if from_time < 255 {
+            let date_key = if from_time < 0 {
                 let mut now = DateTimeAsMicroseconds::now();
                 now.add_hours(from_time);
                 let date_key: DateHourKey = now.into();
