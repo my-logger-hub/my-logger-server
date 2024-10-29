@@ -161,25 +161,13 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::ScanAndSearchStream>, tonic::Status> {
         let request = request.into_inner();
 
+        println!("ScanAndSearchRequest: {:?}", request);
+
         if is_valid_url_to_update(request.ui_url.as_str()) {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let range = if request.to_time == 0 {
-            if request.from_time < 255 {
-                let mut from_date = DateTimeAsMicroseconds::now();
-                from_date.add_minutes(request.from_time);
-                let key = DateHourKey::from(from_date);
-                RequestType::HourKey(key)
-            } else {
-                let key = DateHourKey::from(request.from_time);
-                RequestType::HourKey(key)
-            }
-        } else {
-            let from_date: DateTimeAsMicroseconds = request.from_time.into();
-            let to_date: DateTimeAsMicroseconds = request.to_time.into();
-            RequestType::DateRange(from_date, to_date)
-        };
+        let range = RequestType::from(request.from_time, request.to_time);
 
         println!("ScanAndSearchRequest in range: {:?}", range);
 
@@ -365,6 +353,25 @@ impl MyLogger for GrpcService {
 pub enum RequestType {
     HourKey(DateHourKey),
     DateRange(DateTimeAsMicroseconds, DateTimeAsMicroseconds),
+}
+
+impl RequestType {
+    pub fn from(from_time: i64, to_time: i64) -> Self {
+        if to_time == 0 {
+            let date_key = if from_time < 255 {
+                let mut now = DateTimeAsMicroseconds::now();
+                now.add_hours(from_time);
+                let date_key: DateHourKey = now.into();
+                date_key
+            } else {
+                let date_key: DateHourKey = from_time.into();
+                date_key
+            };
+            return Self::HourKey(date_key);
+        }
+
+        Self::DateRange(from_time.into(), to_time.into())
+    }
 }
 
 pub fn is_valid_url_to_update(url: &str) -> bool {
