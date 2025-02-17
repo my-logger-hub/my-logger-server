@@ -42,8 +42,7 @@ impl IgnoreSingleEventCache {
                     remove_item = true
                 } else {
                     item.amount += 1;
-                    skip_it = item.amount >= item.item.skip_amount;
-                    remove_item = !skip_it; //todo!("Unit test it")
+                    skip_it = item.amount < item.item.skip_amount;
                 }
             }
             None => {
