@@ -1,9 +1,6 @@
 use std::{
     collections::BTreeMap,
-    sync::{
-        atomic::{AtomicI64, AtomicU64},
-        Arc,
-    },
+    sync::{atomic::AtomicU64, Arc},
     time::Duration,
 };
 
@@ -99,7 +96,7 @@ impl LogsRepo {
         filter: &impl Fn(&LogEventFileGrpcModel) -> Option<bool>,
     ) -> Vec<LogEventFileGrpcModel> {
         println!(
-            "Request: {}-{}",
+            "Request: {} - {}",
             from_date.to_rfc3339(),
             to_date.to_rfc3339()
         );
@@ -110,9 +107,10 @@ impl LogsRepo {
 
         let to_key: TenMinKey = to_date.into();
 
+        println!("Range before {} - {}", key.as_u64(), to_key.as_u64());
         let (mut key, to_key) = self.adjust_min_max(key, to_key);
 
-        println!("Doing file scans {}-{}", key.as_u64(), to_key.as_u64());
+        println!("Doing file scans {} - {}", key.as_u64(), to_key.as_u64());
 
         while key.as_u64() <= to_key.as_u64() {
             if let Some(file) = self.get_ten_min_file_to_read(key).await {
