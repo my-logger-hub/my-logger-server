@@ -45,28 +45,7 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let (from_date, to_date) = if request.to_time == 0 {
-            if request.from_time <= 0 {
-                let mut from_date = DateTimeAsMicroseconds::now();
-                from_date.add_hours(request.from_time);
-
-                let mut to_date = from_date;
-                to_date.add_hours(1);
-
-                (from_date, to_date)
-            } else {
-                let from_date = DateTimeAsMicroseconds::new(request.from_time);
-                let mut to_date = from_date;
-                to_date.add_hours(1);
-
-                (from_date, to_date)
-            }
-        } else {
-            let from_date = DateTimeAsMicroseconds::new(request.from_time);
-            let to_date = DateTimeAsMicroseconds::new(request.to_time);
-
-            (from_date, to_date)
-        };
+        let (from_date, to_date) = get_dates(request.from_time, request.to_time);
 
         let levels: Vec<_> = request.levels().map(|itm| itm.into()).collect();
 
@@ -144,8 +123,7 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let from_date = DateTimeAsMicroseconds::new(request.from_time);
-        let to_date = DateTimeAsMicroseconds::new(request.to_time);
+        let (from_date, to_date) = get_dates(request.from_time, request.to_time);
 
         let response = crate::flows::search_and_scan(
             &self.app,
@@ -329,4 +307,30 @@ impl MyLogger for GrpcService {
 
 pub fn is_valid_url_to_update(url: &str) -> bool {
     url.starts_with("https")
+}
+
+fn get_dates(from_time: i64, to_time: i64) -> (DateTimeAsMicroseconds, DateTimeAsMicroseconds) {
+    if to_time > 0 {
+        let from_date = DateTimeAsMicroseconds::new(from_time);
+        let to_date = DateTimeAsMicroseconds::new(to_time);
+
+        return (from_date, to_date);
+    }
+
+    if from_time <= 0 {
+        let mut from_date = DateTimeAsMicroseconds::now();
+        from_date.add_hours(from_time);
+
+        let mut to_date = from_date;
+        to_date.add_hours(1);
+
+        return (from_date, to_date);
+    }
+
+    let from_date: IntervalKey<HourKey> = from_time.into();
+    let from_date: DateTimeAsMicroseconds = from_date.try_into().unwrap();
+    let mut to_date = from_date;
+    to_date.add_hours(1);
+
+    return (from_date, to_date);
 }
