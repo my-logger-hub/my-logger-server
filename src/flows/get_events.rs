@@ -8,7 +8,7 @@ pub async fn get_events(
     levels: Vec<LogLevel>,
     context_keys: Vec<LogEventCtxFileGrpcModel>,
     from_date: DateTimeAsMicroseconds,
-    to_date: Option<DateTimeAsMicroseconds>,
+    to_date: DateTimeAsMicroseconds,
     take: usize,
 ) -> Vec<LogEventFileGrpcModel> {
     let response = app

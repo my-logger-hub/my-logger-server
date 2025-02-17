@@ -64,7 +64,7 @@ impl LogsRepo {
     pub async fn scan(
         &self,
         from_date: DateTimeAsMicroseconds,
-        to_date: Option<DateTimeAsMicroseconds>,
+        to_date: DateTimeAsMicroseconds,
         take: usize,
         filter: &impl Fn(&LogEventFileGrpcModel) -> Option<bool>,
     ) -> Vec<LogEventFileGrpcModel> {
@@ -72,7 +72,7 @@ impl LogsRepo {
 
         let mut key: TenMinKey = from_date.into();
 
-        let to_key: Option<TenMinKey> = to_date.map(|itm| itm.into());
+        let to_key: TenMinKey = to_date.into();
 
         while let Some(file) = self.get_ten_min_file_to_read(key).await {
             let mut file_access = file.lock().await;
@@ -95,10 +95,8 @@ impl LogsRepo {
             }
             key.inc();
 
-            if let Some(to_key) = to_key {
-                if to_key.as_u64() < key.as_u64() {
-                    return result;
-                }
+            if key.as_u64() > to_key.as_u64() {
+                return result;
             }
         }
 

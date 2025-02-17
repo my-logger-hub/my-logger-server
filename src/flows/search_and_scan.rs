@@ -11,7 +11,7 @@ pub async fn search_and_scan(
 ) -> Vec<LogEventFileGrpcModel> {
     let response = app
         .logs_repo
-        .scan(from_date, Some(to_date), limit, &|itm| {
+        .scan(from_date, to_date, limit, &|itm| {
             Some(itm.filter_by_phrase(phrase))
         })
         .await;

@@ -45,10 +45,27 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let to_date = if request.to_time > 0 {
-            Some(DateTimeAsMicroseconds::new(request.to_time))
+        let (from_date, to_date) = if request.to_time == 0 {
+            if request.to_time <= 0 {
+                let mut from_date = DateTimeAsMicroseconds::now();
+                from_date.add_hours(request.from_time);
+
+                let mut to_date = from_date;
+                to_date.add_hours(1);
+
+                (from_date, to_date)
+            } else {
+                let from_date = DateTimeAsMicroseconds::now();
+                let mut to_date = from_date;
+                to_date.add_hours(1);
+
+                (from_date, to_date)
+            }
         } else {
-            None
+            let from_date = DateTimeAsMicroseconds::new(request.from_time);
+            let to_date = DateTimeAsMicroseconds::new(request.to_time);
+
+            (from_date, to_date)
         };
 
         let levels: Vec<_> = request.levels().map(|itm| itm.into()).collect();
@@ -66,7 +83,7 @@ impl MyLogger for GrpcService {
             &self.app,
             levels,
             ctx,
-            DateTimeAsMicroseconds::new(request.from_time),
+            from_date,
             to_date,
             request.take as usize,
         )
