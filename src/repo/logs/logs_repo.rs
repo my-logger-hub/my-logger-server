@@ -102,7 +102,7 @@ impl LogsRepo {
             return None;
         }
 
-        if min.as_u64() < current_max {
+        if min.as_u64() > current_max {
             return None;
         }
 
