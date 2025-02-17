@@ -7,3 +7,5 @@ pub use logs_repo::*;
 mod ten_min_log_iterator;
 pub use ten_min_log_iterator::*;
 mod file_utils;
+mod ten_min_log_model;
+pub use ten_min_log_model::*;

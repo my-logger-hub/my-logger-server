@@ -11,8 +11,27 @@ pub fn compile_file_name(db_path: &FilePath, ten_min_key: TenMinKey) -> FilePath
     file_path
 }
 
-pub async fn gc_files(db_path: &FilePath, from: DateTimeAsMicroseconds) {
-    let files = get_files_from_dir(db_path, LOGS_PREFIX).await;
+pub struct MinMax {
+    pub min: u64,
+    pub max: u64,
+}
+
+impl MinMax {
+    pub fn update(&mut self, value: u64) {
+        if value < self.min {
+            self.min = value;
+        }
+
+        if value > self.max {
+            self.max = value;
+        }
+    }
+}
+
+pub async fn gc_files(db_path: &FilePath, from: DateTimeAsMicroseconds) -> Option<MinMax> {
+    let files = get_logs_files_from_dir(db_path).await;
+
+    let mut result: Option<MinMax> = None;
 
     for file_name in files {
         let ten_min_key = &file_name[LOGS_PREFIX.len()..];
@@ -24,7 +43,22 @@ pub async fn gc_files(db_path: &FilePath, from: DateTimeAsMicroseconds) {
             continue;
         }
 
-        let ten_min_key: TenMinKey = ten_min_key.unwrap().into();
+        let ten_min_key = ten_min_key.unwrap();
+
+        match result.as_mut() {
+            Some(itm) => {
+                itm.update(ten_min_key);
+            }
+            None => {
+                result = MinMax {
+                    min: ten_min_key,
+                    max: ten_min_key,
+                }
+                .into()
+            }
+        }
+
+        let ten_min_key: TenMinKey = ten_min_key.into();
 
         let date: DateTimeAsMicroseconds = ten_min_key.into();
 
@@ -36,9 +70,11 @@ pub async fn gc_files(db_path: &FilePath, from: DateTimeAsMicroseconds) {
             }
         }
     }
+
+    result
 }
 
-async fn get_files_from_dir(db_path: &FilePath, prefix: &str) -> Vec<String> {
+pub async fn get_logs_files_from_dir(db_path: &FilePath) -> Vec<String> {
     let mut result = Vec::new();
     let read_dir = tokio::fs::read_dir(db_path.as_str()).await;
 
@@ -92,7 +128,7 @@ async fn get_files_from_dir(db_path: &FilePath, prefix: &str) -> Vec<String> {
 
         let file_name = next_entity.file_name().into_string().unwrap();
 
-        if file_name.starts_with(prefix) {
+        if file_name.starts_with(LOGS_PREFIX) {
             result.push(file_name);
         }
     }

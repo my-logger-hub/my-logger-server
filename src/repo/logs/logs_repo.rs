@@ -1,4 +1,11 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicI64, AtomicU64},
+        Arc,
+    },
+    time::Duration,
+};
 
 use rust_extensions::{date_time::DateTimeAsMicroseconds, file_utils::FilePath};
 use tokio::sync::Mutex;
@@ -8,6 +15,8 @@ use super::{LogEventFileGrpcModel, TenMinKey, TenMinLog};
 pub struct LogsRepo {
     logs_db_path: FilePath,
     files: Mutex<BTreeMap<TenMinKey, Arc<Mutex<TenMinLog>>>>,
+    min: AtomicU64,
+    max: AtomicU64,
 }
 
 impl LogsRepo {
@@ -15,6 +24,8 @@ impl LogsRepo {
         Self {
             files: Mutex::default(),
             logs_db_path,
+            max: AtomicU64::new(0),
+            min: AtomicU64::new(0),
         }
     }
 
@@ -61,6 +72,25 @@ impl LogsRepo {
         write_access.upload_logs(events).await;
     }
 
+    fn adjust_min_max(&self, min: TenMinKey, max: TenMinKey) -> (TenMinKey, TenMinKey) {
+        let current_min = self.min.load(std::sync::atomic::Ordering::Relaxed);
+        let current_max = self.max.load(std::sync::atomic::Ordering::Relaxed);
+
+        let min = if min.as_u64() < current_min {
+            current_min.into()
+        } else {
+            min
+        };
+
+        let max = if max.as_u64() > current_max {
+            current_min.into()
+        } else {
+            min
+        };
+
+        (min, max)
+    }
+
     pub async fn scan(
         &self,
         from_date: DateTimeAsMicroseconds,
@@ -68,13 +98,23 @@ impl LogsRepo {
         take: usize,
         filter: &impl Fn(&LogEventFileGrpcModel) -> Option<bool>,
     ) -> Vec<LogEventFileGrpcModel> {
+        println!(
+            "Request: {}-{}",
+            from_date.to_rfc3339(),
+            to_date.to_rfc3339()
+        );
+
         let mut result = Vec::new();
 
-        let mut key: TenMinKey = from_date.into();
+        let key: TenMinKey = from_date.into();
 
         let to_key: TenMinKey = to_date.into();
 
-        while key.as_u64() < to_key.as_u64() {
+        let (mut key, to_key) = self.adjust_min_max(key, to_key);
+
+        println!("Doing file scans {}-{}", key.as_u64(), to_key.as_u64());
+
+        while key.as_u64() <= to_key.as_u64() {
             if let Some(file) = self.get_ten_min_file_to_read(key).await {
                 let mut file_access = file.lock().await;
 
@@ -104,6 +144,12 @@ impl LogsRepo {
 
     pub async fn gc(&self, now: DateTimeAsMicroseconds, duration_to_gc: Duration) {
         let delete_from = now.sub(duration_to_gc);
-        super::file_utils::gc_files(&self.logs_db_path, delete_from).await;
+        if let Some(min_max) = super::file_utils::gc_files(&self.logs_db_path, delete_from).await {
+            self.min
+                .store(min_max.min, std::sync::atomic::Ordering::Relaxed);
+
+            self.max
+                .store(min_max.max, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
