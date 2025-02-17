@@ -17,12 +17,31 @@ pub struct LogsRepo {
 }
 
 impl LogsRepo {
-    pub fn new(logs_db_path: FilePath) -> Self {
+    pub async fn new(logs_db_path: FilePath) -> Self {
+        let min_max = super::file_utils::get_min_max(&logs_db_path).await;
+
+        let min_max = min_max.unwrap_or_default();
+
         Self {
             files: Mutex::default(),
             logs_db_path,
-            max: AtomicU64::new(0),
-            min: AtomicU64::new(0),
+            max: AtomicU64::new(min_max.min),
+            min: AtomicU64::new(min_max.max),
+        }
+    }
+
+    fn update_max(&self, max: TenMinKey) {
+        let current_min = self.min.load(std::sync::atomic::Ordering::Relaxed);
+        let current_max = self.max.load(std::sync::atomic::Ordering::Relaxed);
+
+        if current_min == 0 {
+            self.min
+                .store(max.as_u64(), std::sync::atomic::Ordering::Relaxed);
+        }
+
+        if max.as_u64() > current_max {
+            self.max
+                .store(max.as_u64(), std::sync::atomic::Ordering::Relaxed);
         }
     }
 
@@ -40,6 +59,8 @@ impl LogsRepo {
         let file = Arc::new(Mutex::new(file));
 
         files.insert(ten_min_key, file.clone());
+
+        self.update_max(ten_min_key);
 
         file
     }
@@ -69,12 +90,20 @@ impl LogsRepo {
         write_access.upload_logs(events).await;
     }
 
-    fn adjust_min_max(&self, min: TenMinKey, max: TenMinKey) -> (TenMinKey, TenMinKey) {
+    fn adjust_min_max(&self, min: TenMinKey, max: TenMinKey) -> Option<(TenMinKey, TenMinKey)> {
         let current_min = self.min.load(std::sync::atomic::Ordering::Relaxed);
         let current_max = self.max.load(std::sync::atomic::Ordering::Relaxed);
 
         if current_min == 0 {
-            return (min, max);
+            return None;
+        }
+
+        if max.as_u64() < current_min {
+            return None;
+        }
+
+        if min.as_u64() < current_max {
+            return None;
         }
 
         let min = if min.as_u64() < current_min {
@@ -89,7 +118,7 @@ impl LogsRepo {
             max
         };
 
-        (min, max)
+        Some((min, max))
     }
 
     pub async fn scan(
@@ -112,7 +141,10 @@ impl LogsRepo {
         let to_key: TenMinKey = to_date.into();
 
         println!("Range before {} - {}", key.as_u64(), to_key.as_u64());
-        let (mut key, to_key) = self.adjust_min_max(key, to_key);
+        let (mut key, to_key) = match self.adjust_min_max(key, to_key) {
+            Some(value) => value,
+            None => return vec![],
+        };
 
         println!("Doing file scans {} - {}", key.as_u64(), to_key.as_u64());
 

@@ -67,7 +67,7 @@ impl AppContext {
             env_name,
             ignore_events_repo: IgnoreEventsRepo::new(logs_db_path.clone()).await,
             app_states: Arc::new(AppStates::create_initialized()),
-            logs_repo: LogsRepo::new(logs_db_path.clone()),
+            logs_repo: LogsRepo::new(logs_db_path.clone()).await,
             logs_queue: LogsQueue::new(),
             ignore_single_events_repo: IgnoreSingleEventsRepo::new(logs_db_path.clone()).await,
             hour_statistics_repo: HourStatisticsRepo::new(logs_db_path).await,

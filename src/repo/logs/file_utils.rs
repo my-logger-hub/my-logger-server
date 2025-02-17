@@ -11,7 +11,7 @@ pub fn compile_file_name(db_path: &FilePath, ten_min_key: TenMinKey) -> FilePath
     file_path
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MinMax {
     pub min: u64,
     pub max: u64,
@@ -68,6 +68,40 @@ pub async fn gc_files(db_path: &FilePath, from: DateTimeAsMicroseconds) -> Optio
             let err = tokio::fs::remove_file(&file_name).await;
             if let Err(err) = err {
                 println!("Can not GC file {}. Error: {}", file_name, err);
+            }
+        }
+    }
+
+    result
+}
+
+pub async fn get_min_max(db_path: &FilePath) -> Option<MinMax> {
+    let files = get_logs_files_from_dir(db_path).await;
+
+    let mut result: Option<MinMax> = None;
+
+    for file_name in files {
+        let ten_min_key = &file_name[LOGS_PREFIX.len()..];
+
+        let ten_min_key: Result<u64, _> = ten_min_key.parse();
+
+        if ten_min_key.is_err() {
+            println!("Invalid file {} to execute gc", file_name.as_str());
+            continue;
+        }
+
+        let ten_min_key = ten_min_key.unwrap();
+
+        match result.as_mut() {
+            Some(itm) => {
+                itm.update(ten_min_key);
+            }
+            None => {
+                result = MinMax {
+                    min: ten_min_key,
+                    max: ten_min_key,
+                }
+                .into()
             }
         }
     }
