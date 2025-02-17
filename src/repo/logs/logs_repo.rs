@@ -20,6 +20,8 @@ impl LogsRepo {
     pub async fn new(logs_db_path: FilePath) -> Self {
         let min_max = super::file_utils::get_min_max(&logs_db_path).await;
 
+        println!("MinMax: {:?}", min_max);
+
         let min_max = min_max.unwrap_or_default();
 
         Self {
