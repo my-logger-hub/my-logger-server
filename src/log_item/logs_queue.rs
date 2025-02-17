@@ -33,7 +33,7 @@ impl LogsQueue {
 
         let items_in_queue = write_access.as_ref().unwrap().len();
 
-        if max_items_to_dequeue <= items_in_queue {
+        if items_in_queue <= max_items_to_dequeue {
             return write_access.take();
         }
 
