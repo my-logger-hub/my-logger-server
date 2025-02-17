@@ -83,9 +83,9 @@ impl LogsRepo {
         };
 
         let max = if max.as_u64() > current_max {
-            current_min.into()
+            current_max.into()
         } else {
-            min
+            max
         };
 
         (min, max)
@@ -145,7 +145,7 @@ impl LogsRepo {
     pub async fn gc(&self, now: DateTimeAsMicroseconds, duration_to_gc: Duration) {
         let delete_from = now.sub(duration_to_gc);
         if let Some(min_max) = super::file_utils::gc_files(&self.logs_db_path, delete_from).await {
-            println!("Min-max: {}", min - max);
+            println!("Min-max: {}-{}", min, max);
             self.min
                 .store(min_max.min, std::sync::atomic::Ordering::Relaxed);
 
