@@ -21,8 +21,8 @@ impl IgnoreEventModel {
             return false;
         }
 
-        if let Some(application) = log_event.application.as_ref() {
-            if application.as_str() != self.application {
+        if let Some(application) = log_event.get_application() {
+            if application != self.application {
                 return false;
             }
         }

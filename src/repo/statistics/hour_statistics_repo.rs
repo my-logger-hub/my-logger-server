@@ -90,7 +90,7 @@ impl HourStatisticsRepo {
         let mut inner_access = self.inner.write().await;
 
         for log_item in log_items {
-            if let Some(application) = log_item.application.as_ref() {
+            if let Some(application) = log_item.get_application() {
                 let hour_key: IntervalKey<HourKey> = log_item.timestamp.into();
 
                 let day_key: IntervalKey<DayKey> = log_item.timestamp.into();

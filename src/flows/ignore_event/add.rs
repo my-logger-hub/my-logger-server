@@ -14,6 +14,10 @@ pub async fn add(app: &AppContext, event: IgnoreEventModel) {
 
         let mut ctx = BTreeMap::new();
         ctx.insert("Level".to_string(), format!("{:?}", &event.level));
+        ctx.insert(
+            "Application".to_string(),
+            format!("{:?}", event.application),
+        );
         ctx.insert("Marker".to_string(), event.marker);
 
         crate::telegram::api::send_log_item(
@@ -22,7 +26,6 @@ pub async fn add(app: &AppContext, event: IgnoreEventModel) {
                 id: dt.to_rfc3339(),
                 level: my_logger::LogLevel::Info,
                 process: None,
-                application: Some(event.application),
                 message: "Ignore event is added".to_string(),
                 timestamp: dt,
                 ctx,

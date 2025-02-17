@@ -104,10 +104,9 @@ pub async fn send_log_item(
         (
             "text",
             format!(
-                "---\n{}\n{}\n<b>Application</b>:{}\n<b>EnvInfo</b>:{}\n<b>Process</b>: {}\n<b>Msg</b>: {}\n```Context:\n{}\n```\n",
+                "---\n{}\n{}\n<b>EnvInfo</b>:{}\n<b>Process</b>: {}\n<b>Msg</b>: {}\n```Context:\n{}\n```\n",
                 log_item.timestamp.to_rfc3339(),
                 log_item_level_to_telegram_str(&log_item),
-                format_telegram_message(log_item.application.as_ref().map(|itm|itm.as_str()).unwrap_or("")),
                 format_telegram_message(env_name),
                 format_telegram_message(&process),
                 format_telegram_message(&log_item.message),

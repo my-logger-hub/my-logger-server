@@ -23,6 +23,8 @@ impl ElasticLogModel {
     pub fn from_log_into_to_json_value(value: &LogEvent, env_name: &str) -> serde_json::Value {
         if let Some(process) = &value.process {
             if process.contains(AUTO_PANIC_HANDLER) {
+                let application = value.get_application().unwrap_or("N/A").to_string();
+
                 let mut model = serde_json::to_value(ElasticLogModel {
                     inner_id: value.id.clone(),
                     env_source: env_name.to_uppercase(),
@@ -30,7 +32,7 @@ impl ElasticLogModel {
                     process: AUTO_PANIC_HANDLER.to_string(),
                     message: "Auto panic handler".to_string(),
                     date: value.timestamp.unix_microseconds / 1000,
-                    app: value.application.clone().unwrap_or("N/A".to_string()),
+                    app: application,
                 })
                 .unwrap();
 

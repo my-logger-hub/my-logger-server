@@ -5,7 +5,7 @@ use my_json::json_reader::JsonFirstLineIterator;
 use my_logger::LogLevel;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::{app::APPLICATION_KEY, log_item::LogEvent};
+use crate::log_item::LogEvent;
 
 #[derive(MyHttpInput)]
 pub struct SeqInputHttpData {
@@ -46,8 +46,6 @@ impl LogEvent {
         let mut process = None;
 
         let mut message = None;
-
-        let mut application = None;
 
         let json_first_line_reader = JsonFirstLineIterator::new(bytes);
 
@@ -94,10 +92,7 @@ impl LogEvent {
                     let value = value.as_str().unwrap().to_string();
                     message = Some(value);
                 }
-                APPLICATION_KEY => {
-                    let value = value.as_str().unwrap().to_string();
-                    application = Some(value);
-                }
+
                 _ => {
                     let value = value.as_str().unwrap().to_string();
                     ctx.insert(name.to_string(), value);
@@ -116,7 +111,6 @@ impl LogEvent {
             } else {
                 DateTimeAsMicroseconds::now()
             },
-            application,
             process,
             message: message.unwrap(),
             ctx,

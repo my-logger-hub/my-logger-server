@@ -14,6 +14,7 @@ pub async fn remove(app: &AppContext, event: IgnoreEventModel) {
 
         let mut ctx = BTreeMap::new();
         ctx.insert("Level".to_string(), format!("{:?}", &event.level));
+        ctx.insert("Application".to_string(), event.application);
         ctx.insert("Marker".to_string(), event.marker);
 
         crate::telegram::api::send_log_item(
@@ -22,7 +23,6 @@ pub async fn remove(app: &AppContext, event: IgnoreEventModel) {
                 id: dt.to_rfc3339(),
                 level: my_logger::LogLevel::Info,
                 process: None,
-                application: event.application.into(),
                 message: "Ignore event removed".to_string(),
                 timestamp: dt,
                 ctx,

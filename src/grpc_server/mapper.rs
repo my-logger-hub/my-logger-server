@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{app::APPLICATION_KEY, my_logger_grpc::*, repo::logs::LogEventFileGrpcModel};
+use crate::{my_logger_grpc::*, repo::logs::LogEventFileGrpcModel};
 
 impl Into<crate::log_item::LogEvent> for LogEventGrpcModel {
     fn into(self) -> crate::log_item::LogEvent {
@@ -8,20 +8,14 @@ impl Into<crate::log_item::LogEvent> for LogEventGrpcModel {
 
         let mut ctx = BTreeMap::new();
 
-        let mut application = None;
-
         for item in self.ctx {
-            if item.key == APPLICATION_KEY {
-                application = Some(item.value);
-            } else {
-                ctx.insert(item.key, item.value);
-            }
+            ctx.insert(item.key, item.value);
         }
 
         crate::log_item::LogEvent {
             id: crate::utils::generate_log_id(),
             level,
-            application,
+
             process: self.process_name.into(),
             message: self.message,
             timestamp: self.timestamp.into(),

@@ -3,37 +3,38 @@ use std::collections::BTreeMap;
 use my_logger::LogLevel;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::repo::logs::{LogEventCtxFileGrpcModel, LogEventFileGrpcModel};
+use crate::{
+    app::APPLICATION_KEY,
+    repo::logs::{LogEventCtxFileGrpcModel, LogEventFileGrpcModel},
+};
 
 #[derive(Debug)]
 pub struct LogEvent {
     pub id: String,
     pub level: LogLevel,
     pub process: Option<String>,
-    pub application: Option<String>,
     pub message: String,
     pub timestamp: DateTimeAsMicroseconds,
     pub ctx: BTreeMap<String, String>,
 }
 
 impl LogEvent {
-    /*
-       pub fn is_application(&self, application: &str) -> bool {
-           if let Some(app_name) = self.ctx.get(APPLICATION_KEY) {
-               return app_name == application;
-           }
+    pub fn is_application(&self, application: &str) -> bool {
+        if let Some(app_name) = self.ctx.get(APPLICATION_KEY) {
+            return app_name == application;
+        }
 
-           false
-       }
+        false
+    }
 
-       pub fn remove_application(&self) -> Option<&str> {
-           if let Some(app_name) = self.ctx.get(APPLICATION_KEY) {
-               return Some(app_name.as_str());
-           }
+    pub fn get_application(&self) -> Option<&str> {
+        if let Some(app_name) = self.ctx.get(APPLICATION_KEY) {
+            return Some(app_name.as_str());
+        }
 
-           None
-       }
-    */
+        None
+    }
+
     pub fn has_entry(&self, entry: &str) -> bool {
         if let Some(process) = &self.process {
             return process.contains(entry) || self.message.contains(entry);
