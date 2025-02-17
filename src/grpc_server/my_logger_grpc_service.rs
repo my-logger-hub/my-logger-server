@@ -46,7 +46,7 @@ impl MyLogger for GrpcService {
         }
 
         let (from_date, to_date) = if request.to_time == 0 {
-            if request.to_time <= 0 {
+            if request.from_time <= 0 {
                 let mut from_date = DateTimeAsMicroseconds::now();
                 from_date.add_hours(request.from_time);
 
@@ -55,7 +55,7 @@ impl MyLogger for GrpcService {
 
                 (from_date, to_date)
             } else {
-                let from_date = DateTimeAsMicroseconds::now();
+                let from_date = DateTimeAsMicroseconds::new(request.from_time);
                 let mut to_date = from_date;
                 to_date.add_hours(1);
 
