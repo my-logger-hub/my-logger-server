@@ -11,6 +11,7 @@ pub fn compile_file_name(db_path: &FilePath, ten_min_key: TenMinKey) -> FilePath
     file_path
 }
 
+#[derive(Debug)]
 pub struct MinMax {
     pub min: u64,
     pub max: u64,
