@@ -25,9 +25,8 @@ pub struct SettingsModel {
     #[serde(rename = "LogsDbPath")]
     pub logs_db_path: String,
 
-    #[serde(rename = "LogsDbArchivePath")]
-    pub logs_db_archive_path: String,
-
+    //#[serde(rename = "LogsDbArchivePath")]
+    //pub logs_db_archive_path: String,
     pub hours_to_gc: u64,
 
     #[serde(rename = "TelegramSettings")]
