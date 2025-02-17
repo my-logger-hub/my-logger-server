@@ -127,11 +127,13 @@ impl TenMinLog {
         let file = tokio::fs::File::open(file_path.as_str()).await;
 
         if let Err(err) = &file {
+            /*
             println!(
                 "Can not open file {}. Reason: {:?}. Considering file as not exists",
                 file_path.as_str(),
                 err,
             );
+             */
             return None;
         }
 

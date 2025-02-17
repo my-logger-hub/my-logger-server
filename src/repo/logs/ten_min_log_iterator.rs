@@ -25,8 +25,6 @@ impl<'s> TenMinLogIterator<'s> {
 
         let content_size = u32::from_be_bytes(content_size_buf) as usize;
 
-        println!("{}", content_size);
-
         let mut event_payload = Vec::with_capacity(content_size);
         unsafe {
             event_payload.set_len(content_size);

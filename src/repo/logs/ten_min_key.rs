@@ -38,8 +38,6 @@ impl Into<DateTimeAsMicroseconds> for TenMinKey {
     fn into(self) -> DateTimeAsMicroseconds {
         let mut value = self.0;
 
-        println!("{}", value);
-
         let year = value / 100000000;
         value = value - (year * 100000000);
 
