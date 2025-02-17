@@ -5,17 +5,14 @@ use rust_extensions::AppStates;
 use tokio::sync::Mutex;
 
 use crate::{
-    cache::FilterEventsCache,
-    hourly_statistics::HourlyStatistics,
-    ignore_single_events::IgnoreSingleEventCache,
-    insights_repo::InsightsRepo,
-    repo::{HourStatisticsRepo, LogsRepo, SettingsRepo},
+    ignore_single_events_cache::IgnoreSingleEventCache,
+    log_item::*,
+    repo::{ignore_events::*, ignore_single_events::*, logs::*, statistics::*},
     telegram::TelegramNotificationData,
 };
 
-use super::LogsQueue;
-
-pub const PROCESS_CONTEXT_KEY: &'static str = "Process";
+pub const APPLICATION_KEY: &'static str = "Application";
+//pub const PROCESS_CONTEXT_KEY: &'static str = "Process";
 
 pub struct ElasticInner {
     pub client: ElasticClient,
@@ -27,19 +24,18 @@ pub struct AppContext {
     pub app_states: Arc<AppStates>,
     pub logs_repo: LogsRepo,
     pub logs_queue: LogsQueue,
-    pub settings_repo: SettingsRepo,
-    pub filter_events_cache: FilterEventsCache,
     pub elastic: Option<ElasticInner>,
     pub is_debug: bool,
-    pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
 
-    pub telegram_notification_data: Mutex<TelegramNotificationData>,
-
-    pub insights_repo: InsightsRepo,
-
-    pub hourly_statistics: Mutex<HourlyStatistics>,
+    pub telegram_notification_data: TelegramNotificationData,
 
     pub hour_statistics_repo: HourStatisticsRepo,
+
+    pub ignore_events_repo: IgnoreEventsRepo,
+
+    pub ignore_single_events_repo: IgnoreSingleEventsRepo,
+
+    pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
 
     pub env_name: String,
 
@@ -51,8 +47,7 @@ pub const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 impl AppContext {
     pub async fn new(settings_reader: Arc<crate::settings::SettingsReader>) -> Self {
-        let logs_db_path = settings_reader.get_logs_db_path(None).await;
-        let settings_db_path = settings_reader.get_logs_db_path("settings.db".into()).await;
+        let logs_db_path = settings_reader.get_logs_db_path().await;
 
         let mut is_debug = false;
 
@@ -68,25 +63,15 @@ impl AppContext {
 
         let env_name = settings_reader.get_env_name().await;
 
-        let insight_keys = settings_reader.get_insights_keys().await;
-
-        let insights_repo = InsightsRepo::new(insight_keys, 1024);
-
         Self {
             env_name,
+            ignore_events_repo: IgnoreEventsRepo::new(logs_db_path.clone()).await,
             app_states: Arc::new(AppStates::create_initialized()),
-            logs_repo: LogsRepo::new(logs_db_path).await,
+            logs_repo: LogsRepo::new(logs_db_path.clone()),
             logs_queue: LogsQueue::new(),
-            settings_repo: SettingsRepo::new(settings_db_path).await,
-            filter_events_cache: FilterEventsCache::new(),
-            ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
-            hourly_statistics: Mutex::new(HourlyStatistics::new()),
-            hour_statistics_repo: HourStatisticsRepo::new(
-                settings_reader
-                    .get_logs_db_path("hour_statistics.db".into())
-                    .await,
-            )
-            .await,
+            ignore_single_events_repo: IgnoreSingleEventsRepo::new(logs_db_path.clone()).await,
+            hour_statistics_repo: HourStatisticsRepo::new(logs_db_path).await,
+            ignore_single_event_cache: Mutex::default(),
             elastic: settings_reader
                 .get_elastic_settings()
                 .await
@@ -100,8 +85,7 @@ impl AppContext {
                 }),
             settings_reader,
             is_debug,
-            insights_repo,
-            telegram_notification_data: Mutex::new(TelegramNotificationData::new()),
+            telegram_notification_data: TelegramNotificationData::new(),
             ui_url: Mutex::new(String::new()),
         }
     }

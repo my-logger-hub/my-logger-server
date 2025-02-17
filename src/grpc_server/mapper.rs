@@ -1,24 +1,27 @@
 use std::collections::BTreeMap;
 
-use crate::{
-    app::PROCESS_CONTEXT_KEY,
-    my_logger_grpc::*,
-    repo::dto::{IgnoreItemDto, LogItemDto},
-};
+use crate::{app::APPLICATION_KEY, my_logger_grpc::*, repo::logs::LogEventFileGrpcModel};
 
-impl Into<crate::app::LogItem> for LogEventGrpcModel {
-    fn into(self) -> crate::app::LogItem {
+impl Into<crate::log_item::LogEvent> for LogEventGrpcModel {
+    fn into(self) -> crate::log_item::LogEvent {
         let level = self.level().into();
 
         let mut ctx = BTreeMap::new();
 
+        let mut application = None;
+
         for item in self.ctx {
-            ctx.insert(item.key, item.value);
+            if item.key == APPLICATION_KEY {
+                application = Some(item.value);
+            } else {
+                ctx.insert(item.key, item.value);
+            }
         }
 
-        crate::app::LogItem {
+        crate::log_item::LogEvent {
             id: crate::utils::generate_log_id(),
             level,
+            application,
             process: self.process_name.into(),
             message: self.message,
             timestamp: self.timestamp.into(),
@@ -39,52 +42,53 @@ impl Into<my_logger::LogLevel> for LogLevelGrpcModel {
     }
 }
 
-impl Into<crate::repo::dto::LogLevelDto> for LogLevelGrpcModel {
-    fn into(self) -> crate::repo::dto::LogLevelDto {
-        match self {
-            LogLevelGrpcModel::Info => crate::repo::dto::LogLevelDto::Info,
-            LogLevelGrpcModel::Warning => crate::repo::dto::LogLevelDto::Warning,
-            LogLevelGrpcModel::Error => crate::repo::dto::LogLevelDto::Error,
-            LogLevelGrpcModel::Fatal => crate::repo::dto::LogLevelDto::FatalError,
-            LogLevelGrpcModel::Debug => crate::repo::dto::LogLevelDto::Debug,
-        }
-    }
-}
-
-impl Into<LogLevelGrpcModel> for crate::repo::dto::LogLevelDto {
+impl Into<LogLevelGrpcModel> for my_logger::LogLevel {
     fn into(self) -> LogLevelGrpcModel {
         match self {
-            crate::repo::dto::LogLevelDto::Info => LogLevelGrpcModel::Info,
-            crate::repo::dto::LogLevelDto::Warning => LogLevelGrpcModel::Warning,
-            crate::repo::dto::LogLevelDto::Error => LogLevelGrpcModel::Error,
-            crate::repo::dto::LogLevelDto::FatalError => LogLevelGrpcModel::Fatal,
-            crate::repo::dto::LogLevelDto::Debug => LogLevelGrpcModel::Debug,
+            my_logger::LogLevel::Info => LogLevelGrpcModel::Info,
+            my_logger::LogLevel::Warning => LogLevelGrpcModel::Warning,
+            my_logger::LogLevel::Error => LogLevelGrpcModel::Error,
+            my_logger::LogLevel::FatalError => LogLevelGrpcModel::Fatal,
+            my_logger::LogLevel::Debug => LogLevelGrpcModel::Debug,
         }
     }
 }
 
-pub fn to_log_event_grpc_model(mut src: LogItemDto) -> LogEventGrpcModel {
-    let log_level_grpc: LogLevelGrpcModel = src.level.into();
+impl Into<LogLevelGrpcModel> for &'_ my_logger::LogLevel {
+    fn into(self) -> LogLevelGrpcModel {
+        match self {
+            my_logger::LogLevel::Info => LogLevelGrpcModel::Info,
+            my_logger::LogLevel::Warning => LogLevelGrpcModel::Warning,
+            my_logger::LogLevel::Error => LogLevelGrpcModel::Error,
+            my_logger::LogLevel::FatalError => LogLevelGrpcModel::Fatal,
+            my_logger::LogLevel::Debug => LogLevelGrpcModel::Debug,
+        }
+    }
+}
 
-    let process_name = src.context.remove(PROCESS_CONTEXT_KEY);
+pub fn to_log_event_grpc_model(src: LogEventFileGrpcModel) -> LogEventGrpcModel {
+    let log_level: LogLevelGrpcModel = src.get_log_level().into();
 
     LogEventGrpcModel {
         tenant_id: String::new(),
-        timestamp: src.moment.unix_microseconds,
-        process_name: process_name.unwrap_or_default(),
+        timestamp: src.timestamp,
+        process_name: src.process.unwrap_or_default(),
         message: src.message,
-        level: log_level_grpc as i32,
+        level: log_level.into(),
         ctx: src
-            .context
+            .ctx
             .into_iter()
-            .map(|(key, value)| LogEventContext { key, value })
+            .map(|itm| LogEventContext {
+                key: itm.key,
+                value: itm.value,
+            })
             .collect(),
     }
 }
 
-impl Into<IgnoreItemDto> for IgnoreEventGrpcModel {
-    fn into(self) -> IgnoreItemDto {
-        IgnoreItemDto {
+impl Into<crate::repo::ignore_events::IgnoreEventModel> for IgnoreEventGrpcModel {
+    fn into(self) -> crate::repo::ignore_events::IgnoreEventModel {
+        crate::repo::ignore_events::IgnoreEventModel {
             level: self.level().into(),
             application: self.application,
             marker: self.marker,
@@ -92,13 +96,65 @@ impl Into<IgnoreItemDto> for IgnoreEventGrpcModel {
     }
 }
 
-impl Into<IgnoreEventGrpcModel> for IgnoreItemDto {
+impl Into<IgnoreEventGrpcModel> for crate::repo::ignore_events::IgnoreEventModel {
     fn into(self) -> IgnoreEventGrpcModel {
         let log_level_grpc: LogLevelGrpcModel = self.level.into();
         IgnoreEventGrpcModel {
             application: self.application,
             marker: self.marker,
-            level: log_level_grpc as i32,
+            level: log_level_grpc.into(),
+        }
+    }
+}
+
+impl Into<crate::repo::ignore_single_events::IgnoreSingleEventModel>
+    for IgnoreSingleEventGrpcModel
+{
+    fn into(self) -> crate::repo::ignore_single_events::IgnoreSingleEventModel {
+        crate::repo::ignore_single_events::IgnoreSingleEventModel {
+            levels: self.levels().into_iter().map(|itm| itm.into()).collect(),
+            id: self.id,
+            message_match: self.message_match,
+            ctx_match: self
+                .context_match
+                .into_iter()
+                .map(|itm| (itm.key, itm.value))
+                .collect(),
+            skip_amount: self.skip_amount as usize,
+            minutes_to_wait: self.minutes_to_wait as i64,
+        }
+    }
+}
+
+impl Into<IgnoreSingleEventGrpcModel>
+    for &'_ crate::repo::ignore_single_events::IgnoreSingleEventModel
+{
+    fn into(self) -> IgnoreSingleEventGrpcModel {
+        IgnoreSingleEventGrpcModel {
+            id: self.id.to_string(),
+
+            message_match: self.message_match.to_string(),
+
+            skip_amount: self.skip_amount as u64,
+            minutes_to_wait: self.skip_amount as u64,
+
+            levels: self
+                .levels
+                .iter()
+                .map(|itm| {
+                    let log_level: LogLevelGrpcModel = itm.into();
+
+                    log_level.into()
+                })
+                .collect(),
+            context_match: self
+                .ctx_match
+                .iter()
+                .map(|(key, value)| LogEventContext {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                })
+                .collect(),
         }
     }
 }

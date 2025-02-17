@@ -1,16 +1,14 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::server::GrpcService;
-use crate::app::APP_VERSION;
 use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
-use crate::repo::dto::IgnoreWhereModel;
-use crate::repo::DateHourKey;
+use crate::repo::ignore_events::IgnoreEventModel;
+use crate::{app::APP_VERSION, repo::logs::LogEventCtxFileGrpcModel};
 
 use my_grpc_extensions::server::generate_server_stream;
 use my_grpc_extensions::server_stream_result::GrpcServerStreamResult;
-use rust_extensions::date_time::DateTimeAsMicroseconds;
+use rust_extensions::date_time::{DateTimeAsMicroseconds, HourKey, IntervalKey};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -47,69 +45,32 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let levels: Vec<_> = request.levels().collect();
-
-        let response = if request.to_time == 0 {
-            let date_key = if request.from_time < 255 {
-                let mut now = DateTimeAsMicroseconds::now();
-                now.add_hours(request.from_time);
-                let date_key: DateHourKey = now.into();
-                date_key
-            } else {
-                let date_key: DateHourKey = request.from_time.into();
-                date_key
-            };
-
-            let levels = if levels.len() > 0 {
-                Some(levels.into_iter().map(|level| level.into()).collect())
-            } else {
-                None
-            };
-
-            let context = if request.context_keys.len() > 0 {
-                let mut ctx = BTreeMap::new();
-                for itm in request.context_keys {
-                    ctx.insert(itm.key, itm.value);
-                }
-                Some(ctx)
-            } else {
-                None
-            };
-
-            println!("ReadLogEventRequest at hour: {:?}", date_key);
-
-            self.app
-                .logs_repo
-                .get_from_certain_hour(date_key, levels, context, request.take as usize)
-                .await
+        let to_date = if request.to_time > 0 {
+            Some(DateTimeAsMicroseconds::new(request.to_time))
         } else {
-            let from_date = DateTimeAsMicroseconds::new(request.from_time);
-
-            let to_date = if request.to_time > 0 {
-                Some(DateTimeAsMicroseconds::new(request.to_time))
-            } else {
-                None
-            };
-
-            println!(
-                "ReadLogEventRequest at '{}'-'{}'",
-                from_date.to_rfc3339(),
-                if let Some(to_date) = to_date {
-                    to_date.to_rfc3339()
-                } else {
-                    "None".to_string()
-                }
-            );
-            crate::flows::get_events(
-                &self.app,
-                levels,
-                request.context_keys,
-                from_date,
-                to_date,
-                request.take as usize,
-            )
-            .await
+            None
         };
+
+        let levels: Vec<_> = request.levels().map(|itm| itm.into()).collect();
+
+        let ctx: Vec<_> = request
+            .context_keys
+            .into_iter()
+            .map(|itm| LogEventCtxFileGrpcModel {
+                key: itm.key,
+                value: itm.value,
+            })
+            .collect();
+
+        let response = crate::flows::get_events(
+            &self.app,
+            levels,
+            ctx,
+            DateTimeAsMicroseconds::new(request.from_time),
+            to_date,
+            request.take as usize,
+        )
+        .await;
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
             super::mapper::to_log_event_grpc_model(dto)
@@ -127,7 +88,10 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let response = self.app.logs_repo.get_statistics().await;
+        let from: IntervalKey<HourKey> = DateTimeAsMicroseconds::new(request.from_time).into();
+        let to: IntervalKey<HourKey> = DateTimeAsMicroseconds::new(request.to_time).into();
+
+        let response = self.app.hour_statistics_repo.get(from, to).await;
 
         let mut result = StatisticData {
             info_count: 0,
@@ -138,16 +102,12 @@ impl MyLogger for GrpcService {
         };
 
         for itm in response {
-            match itm.level {
-                crate::repo::dto::LogLevelDto::Info => result.info_count = itm.count.get_value(),
-                crate::repo::dto::LogLevelDto::Warning => {
-                    result.warning_count = itm.count.get_value()
-                }
-                crate::repo::dto::LogLevelDto::Error => result.error_count = itm.count.get_value(),
-                crate::repo::dto::LogLevelDto::FatalError => {
-                    result.fatal_count = itm.count.get_value()
-                }
-                crate::repo::dto::LogLevelDto::Debug => result.debug_count = itm.count.get_value(),
+            for data in itm.1.values() {
+                result.debug_count += data.debug as i32;
+                result.error_count += data.error as i32;
+                result.fatal_count += data.fatal_error as i32;
+                result.info_count += data.info as i32;
+                result.warning_count += data.warning as i32;
             }
         }
 
@@ -167,28 +127,17 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let range = RequestType::from_scan_request(request.from_time, request.to_time);
+        let from_date = DateTimeAsMicroseconds::new(request.from_time);
+        let to_date = DateTimeAsMicroseconds::new(request.to_time);
 
-        println!("ScanAndSearchRequest in range: {:?}", range);
-
-        let response = match range {
-            RequestType::HourKey(date_hour_key) => {
-                self.app
-                    .logs_repo
-                    .scan_from_exact_hour(date_hour_key, &request.phrase, request.take as usize)
-                    .await
-            }
-            RequestType::DateRange(from_date, to_date) => {
-                crate::flows::search_and_scan(
-                    &self.app,
-                    from_date,
-                    to_date,
-                    &request.phrase,
-                    request.take as usize,
-                )
-                .await
-            }
-        };
+        let response = crate::flows::search_and_scan(
+            &self.app,
+            from_date,
+            to_date,
+            &request.phrase,
+            request.take as usize,
+        )
+        .await;
 
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
             super::mapper::to_log_event_grpc_model(dto)
@@ -202,7 +151,7 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
 
-        crate::flows::add_ignore_event(&self.app, request.into()).await;
+        crate::flows::ignore_event::add(&self.app, request.into()).await;
         return Ok(tonic::Response::new(()));
     }
 
@@ -212,7 +161,11 @@ impl MyLogger for GrpcService {
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<Self::GetIgnoreEventsStream>, tonic::Status> {
-        let response = self.app.settings_repo.get_ignore_events().await;
+        let response = self.app.ignore_events_repo.get_all().await;
+
+        let response: Vec<IgnoreEventGrpcModel> =
+            response.into_iter().map(|itm| itm.into()).collect();
+
         my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), |dto| dto.into())
             .await
     }
@@ -222,9 +175,9 @@ impl MyLogger for GrpcService {
         request: tonic::Request<DeleteIgnoreEventGrpcRequest>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
-        crate::flows::remove_ignore_event(
+        crate::flows::ignore_event::remove(
             &self.app,
-            IgnoreWhereModel {
+            IgnoreEventModel {
                 level: request.level().into(),
                 application: request.application,
                 marker: request.marker,
@@ -240,7 +193,8 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
 
-        crate::flows::ignore_single_event::add(&self.app, request).await;
+        crate::flows::ignore_single_event::add(&self.app, request.into()).await;
+
         return Ok(tonic::Response::new(()));
     }
 
@@ -249,10 +203,12 @@ impl MyLogger for GrpcService {
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<Self::GetIgnoreSingleEventsStream>, tonic::Status> {
-        let result = crate::flows::ignore_single_event::get_all(&self.app).await;
+        let result = self.app.ignore_single_events_repo.get_all().await;
 
-        my_grpc_extensions::grpc_server::send_vec_to_stream(result.into_iter(), |dto| dto.into())
-            .await
+        my_grpc_extensions::grpc_server::send_vec_to_stream(result.into_iter(), |dto| {
+            dto.as_ref().into()
+        })
+        .await
     }
 
     async fn delete_ignore_single_event(
@@ -261,7 +217,7 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let request = request.into_inner();
 
-        crate::flows::ignore_single_event::delete(&self.app, request.id).await;
+        crate::flows::ignore_single_event::delete(&self.app, request.id.as_str()).await;
         return Ok(tonic::Response::new(()));
     }
 
@@ -273,20 +229,20 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::GetHourlyStatisticsStream>, tonic::Status> {
         let request = request.into_inner();
 
+        let response = self
+            .app
+            .hour_statistics_repo
+            .get_highest_and_below(request.amount_of_hours as usize)
+            .await;
+
         let (mut stream_result, result) = GrpcServerStreamResult::new();
 
-        let app = self.app.clone();
         tokio::spawn(async move {
-            let result = {
-                let read_access = app.hourly_statistics.lock().await;
-                read_access.get_max_hours(request.amount_of_hours as usize)
-            };
-
-            for (hour, items) in result {
+            for (hour, items) in response {
                 for (app, statistics) in items {
                     stream_result
                         .send(HourlyStatisticsGrpcModel {
-                            hour_key: hour.get_value(),
+                            hour_key: hour.to_i64() as u64,
                             app,
                             info_count: statistics.info,
                             warning_count: statistics.warning,
@@ -308,26 +264,31 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<GetInsightsKeysResponse>, tonic::Status> {
         let _request = request.into_inner();
 
-        let keys = self.app.insights_repo.get_keys().await;
+        /*
 
-        let result = GetInsightsKeysResponse { keys };
+               let keys = self.app.insights_repo.get_keys().await;
 
-        Ok(tonic::Response::new(result))
+               let result = GetInsightsKeysResponse { keys };
+        */
+        Ok(tonic::Response::new(GetInsightsKeysResponse {
+            keys: vec![],
+        }))
     }
 
     async fn get_insights_values(
         &self,
         request: tonic::Request<GetInsightsValuesRequest>,
     ) -> Result<tonic::Response<GetInsightsValuesResponse>, tonic::Status> {
-        let request = request.into_inner();
+        let _request = request.into_inner();
 
-        let values = self
-            .app
-            .insights_repo
-            .get_values(request.key.as_str(), request.phrase.as_str(), 20)
-            .await;
-
-        let result = GetInsightsValuesResponse { values };
+        /*
+               let values = self
+                   .app
+                   .insights_repo
+                   .get_values(request.key.as_str(), request.phrase.as_str(), 20)
+                   .await;
+        */
+        let result = GetInsightsValuesResponse { values: vec![] };
 
         Ok(tonic::Response::new(result))
     }
@@ -346,31 +307,6 @@ impl MyLogger for GrpcService {
 
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {
         Ok(tonic::Response::new(()))
-    }
-}
-
-#[derive(Debug)]
-pub enum RequestType {
-    HourKey(DateHourKey),
-    DateRange(DateTimeAsMicroseconds, DateTimeAsMicroseconds),
-}
-
-impl RequestType {
-    pub fn from_scan_request(from_time: i64, to_time: i64) -> Self {
-        if to_time == 0 {
-            let date_key = if from_time < 0 {
-                let mut now = DateTimeAsMicroseconds::now();
-                now.add_hours(from_time);
-                let date_key: DateHourKey = now.into();
-                date_key
-            } else {
-                let date_key: DateHourKey = from_time.into();
-                date_key
-            };
-            return Self::HourKey(date_key);
-        }
-
-        Self::DateRange(from_time.into(), to_time.into())
     }
 }
 

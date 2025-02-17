@@ -1,10 +1,10 @@
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::{app::LogItem, settings::TelegramSettings};
+use crate::{log_item::*,  settings::TelegramSettings};
 
 use super::NotificationItem;
 
-pub fn log_item_level_to_telegram_str(log_item: &LogItem) -> &str {
+pub fn log_item_level_to_telegram_str(log_item: &LogEvent) -> &str {
     match &log_item.level {
         my_logger::LogLevel::Info => "☑",
         my_logger::LogLevel::Warning => "⚠️Warning",
@@ -79,7 +79,7 @@ pub async fn send_notification_data(
 // Define a function to send a message using the Telegram Bot API
 pub async fn send_log_item(
     telegram_settings: &TelegramSettings,
-    log_item: &LogItem,
+    log_item: &LogEvent,
     env_name: &str,
 ) {
     // Set the API endpoint and parameters
@@ -104,9 +104,10 @@ pub async fn send_log_item(
         (
             "text",
             format!(
-                "---\n{}\n{}\n<b>EnvInfo</b>:{}\n<b>Process</b>: {}\n<b>Msg</b>: {}\n```Context:\n{}\n```\n",
+                "---\n{}\n{}\n<b>Application</b>:{}\n<b>EnvInfo</b>:{}\n<b>Process</b>: {}\n<b>Msg</b>: {}\n```Context:\n{}\n```\n",
                 log_item.timestamp.to_rfc3339(),
                 log_item_level_to_telegram_str(&log_item),
+                format_telegram_message(log_item.application.as_ref().map(|itm|itm.as_str()).unwrap_or("")),
                 format_telegram_message(env_name),
                 format_telegram_message(&process),
                 format_telegram_message(&log_item.message),
@@ -130,6 +131,43 @@ pub async fn send_log_item(
     //let telegram_response: TelegramResponse = response.json().await?;
 
     // Return the telegram response
+}
+
+
+pub async fn send_text_message(telegram_settings: &TelegramSettings, info: &str){
+
+        // Set the API endpoint and parameters
+        let url = format!(
+            "https://api.telegram.org/bot{}/sendMessage",
+            telegram_settings.api_key
+        );
+
+    let params = [
+        ("chat_id", telegram_settings.chat_id.to_string()),
+        (
+            "message_thread_id",
+            telegram_settings.message_thread_id.to_string(),
+        ),
+        ("parse_mode", "Markdown".to_string()),
+        (
+            "text",
+            format!(
+                "---\n{}\n⚠️<b>System message:</b>{}\n",
+                DateTimeAsMicroseconds::now().to_rfc3339(),
+                info
+            ),
+        ),
+    ]; 
+
+    let client = reqwest::Client::builder()
+    .danger_accept_invalid_certs(true)
+    .build()
+    .unwrap();
+
+    let response = client.post(&url).form(&params).send().await;
+    
+    println!("{:?}", response);
+
 }
 
 fn format_telegram_message(src: &str) -> String {

@@ -4,7 +4,9 @@ use my_http_server::{macros::*, types::RawDataTyped, HttpFailResult};
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 use serde::Deserialize;
 
-use crate::{app::LogItem, http::controllers::shared_contract::LogLevelHttpModel};
+use crate::{
+    app::APPLICATION_KEY, http::controllers::shared_contract::LogLevelHttpModel, log_item::LogEvent,
+};
 
 #[derive(MyHttpInput)]
 pub struct PostJsonLogsV2InputData {
@@ -13,7 +15,7 @@ pub struct PostJsonLogsV2InputData {
 }
 
 impl PostJsonLogsV2InputData {
-    pub fn parse_log_events(&self) -> Result<Vec<LogItem>, HttpFailResult> {
+    pub fn parse_log_events(&self) -> Result<Vec<LogEvent>, HttpFailResult> {
         let items = self.body.deserialize_json()?;
 
         let mut result = Vec::with_capacity(items.len());
@@ -30,17 +32,22 @@ impl PostJsonLogsV2InputData {
 
             let timestamp = timestamp.unwrap();
 
-            result.push(LogItem {
+            let mut ctx = if let Some(ctx) = itm.context {
+                ctx
+            } else {
+                BTreeMap::new()
+            };
+
+            let application = ctx.remove(APPLICATION_KEY);
+
+            result.push(LogEvent {
                 id: crate::utils::generate_log_id(),
                 level: itm.level.into(),
                 process: itm.process,
                 message: itm.message,
                 timestamp,
-                ctx: if let Some(ctx) = itm.context {
-                    ctx
-                } else {
-                    BTreeMap::new()
-                },
+                application,
+                ctx,
             });
         }
 

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
-use crate::app::{AppContext, LogItem};
+use crate::{app::AppContext, log_item::*};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ElasticLogModel {
@@ -20,21 +20,17 @@ pub struct ElasticLogModel {
 }
 
 impl ElasticLogModel {
-    pub fn from_log_into_to_json_value(value: &LogItem, env_name: &str) -> serde_json::Value {
+    pub fn from_log_into_to_json_value(value: &LogEvent, env_name: &str) -> serde_json::Value {
         if let Some(process) = &value.process {
             if process.contains(AUTO_PANIC_HANDLER) {
                 let mut model = serde_json::to_value(ElasticLogModel {
                     inner_id: value.id.clone(),
                     env_source: env_name.to_uppercase(),
-                    log_level: value.level.to_string().to_string(),
+                    log_level: value.level.as_str().to_string(),
                     process: AUTO_PANIC_HANDLER.to_string(),
                     message: "Auto panic handler".to_string(),
                     date: value.timestamp.unix_microseconds / 1000,
-                    app: value
-                        .ctx
-                        .get(APP_CONTEXT)
-                        .cloned()
-                        .unwrap_or("N/A".to_string()),
+                    app: value.application.clone().unwrap_or("N/A".to_string()),
                 })
                 .unwrap();
 
@@ -58,7 +54,7 @@ impl ElasticLogModel {
         let mut model = serde_json::to_value(ElasticLogModel {
             inner_id: value.id.clone(),
             env_source: env_name.to_uppercase(),
-            log_level: value.level.to_string().to_string(),
+            log_level: value.level.as_str().to_string(),
             process: value.process.clone().unwrap_or("N/A".to_string()),
             message: value.message.clone(),
             date: value.timestamp.unix_microseconds / 1000,

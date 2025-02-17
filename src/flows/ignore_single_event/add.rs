@@ -1,14 +1,12 @@
-use crate::{app::AppContext, my_logger_grpc::*};
+use crate::{app::AppContext, repo::ignore_single_events::*};
 
-pub async fn add(app: &AppContext, item: IgnoreSingleEventGrpcModel) {
-    let mut write_access = app.ignore_single_event_cache.lock().await;
+pub async fn add(app: &AppContext, item: IgnoreSingleEventModel) {
+    app.ignore_single_events_repo.add(item).await;
 
-    if !write_access.initialized {
-        let items = super::persistence::get_all(app).await;
-        write_access.init(items.clone());
+    let telegram_settings = app.settings_reader.get_telegram_settings().await;
+
+    if let Some(telegram_settings) = telegram_settings {
+        crate::telegram::api::send_text_message(&telegram_settings, "Ignore single event added")
+            .await;
     }
-
-    write_access.add(item.clone());
-
-    super::persistence::save(app, write_access.get_all()).await;
 }

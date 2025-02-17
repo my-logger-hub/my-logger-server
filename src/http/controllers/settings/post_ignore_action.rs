@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::contracts::*;
 use my_http_server::{macros::http_route, HttpContext, HttpFailResult, HttpOkResult, HttpOutput};
 
-use crate::{app::AppContext, repo::dto::IgnoreItemDto};
+use crate::app::AppContext;
 
 #[http_route(
     method: "POST",
@@ -30,16 +30,7 @@ async fn handle_request(
     input_data: PostIgnoreMaskHttpInput,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    crate::flows::add_ignore_event(
-        &action.app,
-        IgnoreItemDto {
-            level: input_data.level.into(),
-            application: input_data.application,
-            marker: input_data.marker,
-        },
-    )
-    .await;
+    crate::flows::ignore_event::add(&action.app, input_data.into()).await;
 
-    action.app.filter_events_cache.reset().await;
     return HttpOutput::Empty.into_ok_result(true).into();
 }

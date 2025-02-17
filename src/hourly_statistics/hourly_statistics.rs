@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
 
-use crate::{app::LogItem, repo::HourStatisticsDto};
+use crate::log_item::LogItem;
 
 use super::StatisticsHour;
 

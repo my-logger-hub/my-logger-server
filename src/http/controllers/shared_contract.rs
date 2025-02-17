@@ -2,9 +2,7 @@ use my_http_server::macros::MyHttpStringEnum;
 use my_logger::LogLevel;
 use serde::Deserialize;
 
-use crate::repo::dto::LogLevelDto;
-
-#[derive(MyHttpStringEnum, Deserialize, Debug)]
+#[derive(MyHttpStringEnum, Deserialize, Debug, Clone, Copy)]
 pub enum LogLevelHttpModel {
     #[http_enum_case(id:0, description = "Info level")]
     Info,
@@ -16,18 +14,6 @@ pub enum LogLevelHttpModel {
     FatalError,
     #[http_enum_case(id:4, description = "Debug level")]
     Debug,
-}
-
-impl Into<LogLevelDto> for LogLevelHttpModel {
-    fn into(self) -> LogLevelDto {
-        match self {
-            LogLevelHttpModel::Info => LogLevelDto::Info,
-            LogLevelHttpModel::Warning => LogLevelDto::Warning,
-            LogLevelHttpModel::Error => LogLevelDto::Error,
-            LogLevelHttpModel::FatalError => LogLevelDto::FatalError,
-            LogLevelHttpModel::Debug => LogLevelDto::Debug,
-        }
-    }
 }
 
 impl Into<LogLevel> for LogLevelHttpModel {

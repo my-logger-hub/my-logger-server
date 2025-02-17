@@ -28,16 +28,12 @@ async fn handle_request(
     action: &GetIgnoreAction,
     _ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
-    let result = action.app.settings_repo.get_ignore_events().await;
+    let result = action.app.ignore_events_repo.get_all().await;
 
-    let mut model = Vec::with_capacity(result.len());
+    let mut model: Vec<IgnoreEventHttpModel> = Vec::with_capacity(result.len());
 
     for itm in result {
-        model.push(IgnoreEventHttpModel {
-            level: format!("{:?}", itm.level),
-            application: itm.application,
-            marker: itm.marker,
-        });
+        model.push(itm.into());
     }
 
     return HttpOutput::as_json(model).into_ok_result(true).into();

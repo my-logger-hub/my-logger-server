@@ -18,10 +18,11 @@ impl NotifyTelegramTimer {
 impl MyTimerTick for NotifyTelegramTimer {
     async fn tick(&self) {
         let now = DateTimeAsMicroseconds::now();
-        let to_telegram = {
-            let mut data_access = self.app.telegram_notification_data.lock().await;
-            data_access.get_something_to_notify(now)
-        };
+        let to_telegram = self
+            .app
+            .telegram_notification_data
+            .get_something_to_notify(now)
+            .await;
 
         if to_telegram.is_none() {
             return;

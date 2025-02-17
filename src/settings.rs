@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use rust_extensions::file_utils::FilePath;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -40,9 +41,6 @@ pub struct SettingsModel {
 
     #[serde(rename = "UiUrl")]
     pub ui_url: Option<String>,
-
-    #[serde(rename = "InsightsKeys")]
-    pub insights_keys: Option<Vec<String>>,
 }
 
 impl SettingsReader {
@@ -56,10 +54,10 @@ impl SettingsReader {
         read_access.env_name.clone()
     }
 
-    pub async fn get_insights_keys(&self) -> Vec<String> {
-        let read_access = self.settings.read().await;
-        read_access.insights_keys.clone().unwrap_or_default()
-    }
+    //pub async fn get_insights_keys(&self) -> Vec<String> {
+    //    let read_access = self.settings.read().await;
+    //    read_access.insights_keys.clone().unwrap_or_default()
+    // }
 
     pub async fn get_elastic_settings(&self) -> Option<ElasticSettings> {
         let read_access = self.settings.read().await;
@@ -76,25 +74,8 @@ impl SettingsReader {
         Duration::from_secs(60 * 60 * read_access.hours_to_gc as u64)
     }
 
-    pub async fn get_logs_db_path(&self, file_name: Option<&str>) -> String {
+    pub async fn get_logs_db_path(&self) -> FilePath {
         let read_access = self.settings.read().await;
-
-        let mut result = if read_access.logs_db_path.starts_with("~") {
-            read_access
-                .logs_db_path
-                .replace("~", &std::env::var("HOME").unwrap())
-        } else {
-            read_access.logs_db_path.clone()
-        };
-
-        if !result.ends_with(std::path::MAIN_SEPARATOR) {
-            result.push('/')
-        }
-
-        if let Some(file_name) = file_name {
-            result.push_str(file_name);
-        }
-
-        result
+        FilePath::from_str(&read_access.logs_db_path)
     }
 }

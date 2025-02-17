@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use my_http_server::{macros::MyHttpInput, types::RawData};
 use my_json::json_reader::JsonFirstLineIterator;
 use my_logger::LogLevel;
-use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec};
+use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::app::LogItem;
+use crate::{app::APPLICATION_KEY, log_item::LogEvent};
 
 #[derive(MyHttpInput)]
 pub struct SeqInputHttpData {
@@ -14,13 +14,13 @@ pub struct SeqInputHttpData {
 }
 
 impl SeqInputHttpData {
-    pub fn parse_log_events(&self) -> Option<Vec<LogItem>> {
-        let mut result = LazyVec::new();
+    pub fn parse_log_events(&self) -> Vec<LogEvent> {
+        let mut result = Vec::new();
 
         for chunk in self.body.as_slice().split(|itm| *itm == 13u8) {
-            match LogItem::parse_as_seq_payload(chunk) {
+            match LogEvent::parse_as_seq_payload(chunk) {
                 Ok(log_data) => {
-                    result.add(log_data);
+                    result.push(log_data);
                 }
                 Err(err) => {
                     println!(
@@ -32,11 +32,11 @@ impl SeqInputHttpData {
             }
         }
 
-        result.get_result()
+        result
     }
 }
 
-impl LogItem {
+impl LogEvent {
     pub fn parse_as_seq_payload(bytes: &[u8]) -> Result<Self, String> {
         let mut ctx = BTreeMap::new();
 
@@ -46,6 +46,8 @@ impl LogItem {
         let mut process = None;
 
         let mut message = None;
+
+        let mut application = None;
 
         let json_first_line_reader = JsonFirstLineIterator::new(bytes);
 
@@ -92,6 +94,10 @@ impl LogItem {
                     let value = value.as_str().unwrap().to_string();
                     message = Some(value);
                 }
+                APPLICATION_KEY => {
+                    let value = value.as_str().unwrap().to_string();
+                    application = Some(value);
+                }
                 _ => {
                     let value = value.as_str().unwrap().to_string();
                     ctx.insert(name.to_string(), value);
@@ -110,6 +116,7 @@ impl LogItem {
             } else {
                 DateTimeAsMicroseconds::now()
             },
+            application,
             process,
             message: message.unwrap(),
             ctx,
@@ -119,7 +126,7 @@ impl LogItem {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::LogItem;
+    use crate::log_item::LogEvent;
 
     #[test]
     fn test() {
@@ -129,7 +136,7 @@ mod tests {
 {"@l":"Info","@t":"2023-08-11T21:02:45.688846+00:00","Process":"TelemetryWriterTimer","@m":"Timer TelemetryWriterTimer is started with delay 1 sec","Application":"trx-wallet-grpc","Version":"0.1.0"}
 {"@l":"Info","@t":"2023-08-11T21:02:45.687863+00:00","Process":"Starting Http Server","@m":"Http server starts at: 0.0.0.0:8000","Application":"trx-wallet-grpc","Version":"0.1.0"}"#;
 
-        let item = LogItem::parse_as_seq_payload(src.as_bytes()).unwrap();
+        let item = LogEvent::parse_as_seq_payload(src.as_bytes()).unwrap();
 
         println!("item: {:?}", item);
     }

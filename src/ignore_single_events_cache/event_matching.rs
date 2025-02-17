@@ -1,6 +1,6 @@
-use crate::{app::LogItem, my_logger_grpc::IgnoreSingleEventGrpcModel};
+use crate::{log_item::LogEvent, my_logger_grpc::IgnoreSingleEventGrpcModel};
 
-pub fn match_event(itm: &LogItem, ignore_single_event: &IgnoreSingleEventGrpcModel) -> bool {
+pub fn match_event(itm: &LogEvent, ignore_single_event: &IgnoreSingleEventGrpcModel) -> bool {
     let level_as_i32 = level_is_i32(itm.level);
     let matched = ignore_single_event
         .levels

@@ -6,13 +6,13 @@ use rust_extensions::MyTimer;
 
 mod app;
 mod background;
-mod cache;
+//mod cache;
 mod flows;
 mod grpc_server;
-mod hourly_statistics;
+//mod hourly_statistics;
 mod http;
-mod ignore_single_events;
-mod insights_repo;
+mod ignore_single_events_cache;
+mod log_item;
 mod repo;
 mod settings;
 mod telegram;
@@ -53,8 +53,6 @@ async fn main() {
         Arc::new(NotifyTelegramTimer::new(app.clone())),
     );
     gc_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
-
-    crate::flows::init(&app).await;
 
     crate::grpc_server::start(app.clone());
 

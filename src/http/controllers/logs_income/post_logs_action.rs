@@ -38,7 +38,7 @@ async fn handle_request(
      */
     let log_events = input_data.parse_log_events();
 
-    if let Some(log_events) = log_events {
+    if log_events.len() > 0 {
         crate::flows::post_items(&action.app, log_events).await;
     }
 
