@@ -20,15 +20,13 @@ impl LogsRepo {
     pub async fn new(logs_db_path: FilePath) -> Self {
         let min_max = super::file_utils::get_min_max(&logs_db_path).await;
 
-        println!("MinMax: {:?}", min_max);
-
         let min_max = min_max.unwrap_or_default();
 
         Self {
             files: Mutex::default(),
             logs_db_path,
-            max: AtomicU64::new(min_max.min),
-            min: AtomicU64::new(min_max.max),
+            min: AtomicU64::new(min_max.min),
+            max: AtomicU64::new(min_max.max),
         }
     }
 
