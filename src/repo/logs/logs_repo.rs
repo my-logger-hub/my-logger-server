@@ -73,6 +73,10 @@ impl LogsRepo {
         let current_min = self.min.load(std::sync::atomic::Ordering::Relaxed);
         let current_max = self.max.load(std::sync::atomic::Ordering::Relaxed);
 
+        if current_min == 0 {
+            return (min, max);
+        }
+
         let min = if min.as_u64() < current_min {
             current_min.into()
         } else {
