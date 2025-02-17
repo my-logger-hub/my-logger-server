@@ -74,30 +74,29 @@ impl LogsRepo {
 
         let to_key: TenMinKey = to_date.into();
 
-        while let Some(file) = self.get_ten_min_file_to_read(key).await {
-            let mut file_access = file.lock().await;
+        while key.as_u64() < to_key.as_u64() {
+            if let Some(file) = self.get_ten_min_file_to_read(key).await {
+                let mut file_access = file.lock().await;
 
-            let iterator = file_access.iter().await;
+                let iterator = file_access.iter().await;
 
-            while let Some(item) = iterator.get_next().await {
-                match filter(&item) {
-                    Some(insert_it) => {
-                        if insert_it {
-                            result.push(item);
+                while let Some(item) = iterator.get_next().await {
+                    match filter(&item) {
+                        Some(insert_it) => {
+                            if insert_it {
+                                result.push(item);
 
-                            if result.len() >= take {
-                                return result;
+                                if result.len() >= take {
+                                    return result;
+                                }
                             }
                         }
+                        None => return result,
                     }
-                    None => return result,
                 }
             }
-            key.inc();
 
-            if key.as_u64() > to_key.as_u64() {
-                return result;
-            }
+            key.inc();
         }
 
         result
