@@ -101,47 +101,36 @@ impl HourStatisticsRepo {
         for log_item in log_items {
             if let Some(application) = log_item.get_application() {
                 let hour_key: IntervalKey<HourKey> = log_item.timestamp.into();
-                println!("HourKey: {:?}", hour_key);
 
                 let day_key: IntervalKey<DayKey> = log_item.timestamp.into();
-                println!("DayKey: {:?}", day_key);
 
                 let by_day = match inner_access.get_mut(&day_key) {
                     Some(by_day) => by_day,
                     None => {
-                        let by_day = HourStatisticsRepoInner::default();
-                        inner_access.insert(day_key, by_day);
+                        inner_access.insert(day_key, Default::default());
                         inner_access.get_mut(&day_key).unwrap()
                     }
                 };
 
                 by_day.has_to_write = true;
 
-                let add_new = match by_day.items.get_mut(&hour_key) {
-                    Some(by_hour_key) => {
-                        if let Some(by_app) = by_hour_key.get_mut(application) {
-                            println!("{:?}", by_app);
-                            println!("Incremenging {:?}", log_item.level);
-                            by_app.inc(log_item.level);
-                            println!("{:?}", by_app);
-                            false
-                        } else {
-                            true
-                        }
+                let by_hour_key = match by_day.items.get_mut(&hour_key) {
+                    Some(by_hour_key) => by_hour_key,
+                    None => {
+                        by_day.items.insert(hour_key, Default::default());
+                        by_day.items.get_mut(&hour_key).unwrap()
                     }
-                    None => true,
                 };
 
-                if add_new {
-                    println!("Adding new");
-                    let mut by_hour_key = BTreeMap::new();
-
+                if let Some(by_app) = by_hour_key.get_mut(application) {
+                    println!("{:?}", by_app);
+                    by_app.inc(log_item.level);
+                    println!("{:?}", by_app);
+                } else {
                     by_hour_key.insert(
                         application.to_string(),
                         HourlyStatisticsModel::from_log_item(log_item),
                     );
-
-                    by_day.items.insert(hour_key, by_hour_key);
                 }
             }
         }
