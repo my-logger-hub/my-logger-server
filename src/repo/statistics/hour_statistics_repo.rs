@@ -168,6 +168,11 @@ impl HourStatisticsRepo {
 
         for by_day in read_access.values().rev() {
             for (hour_key, items) in by_day.items.iter().rev() {
+                println!(
+                    "Inserting {} elements for hour_key {}",
+                    items.len(),
+                    hour_key.to_i64()
+                );
                 result.insert(*hour_key, items.clone());
             }
 
