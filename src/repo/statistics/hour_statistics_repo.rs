@@ -120,8 +120,10 @@ impl HourStatisticsRepo {
                 let add_new = match by_day.items.get_mut(&hour_key) {
                     Some(by_hour_key) => {
                         if let Some(by_app) = by_hour_key.get_mut(application) {
+                            println!("{:?}", by_app);
                             println!("Incremenging {:?}", log_item.level);
                             by_app.inc(log_item.level);
+                            println!("{:?}", by_app);
                             false
                         } else {
                             true
@@ -131,6 +133,7 @@ impl HourStatisticsRepo {
                 };
 
                 if add_new {
+                    println!("Adding new");
                     let mut by_hour_key = BTreeMap::new();
 
                     by_hour_key.insert(
