@@ -123,9 +123,7 @@ impl HourStatisticsRepo {
                 };
 
                 if let Some(by_app) = by_hour_key.get_mut(application) {
-                    println!("{:?}", by_app);
                     by_app.inc(log_item.level);
-                    println!("{:?}", by_app);
                 } else {
                     by_hour_key.insert(
                         application.to_string(),
