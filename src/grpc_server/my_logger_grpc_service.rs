@@ -233,7 +233,7 @@ impl MyLogger for GrpcService {
         let (mut stream_result, result) = GrpcServerStreamResult::new();
 
         tokio::spawn(async move {
-            for (hour, items) in response {
+            for (hour, items) in response.into_iter().rev() {
                 for (app, statistics) in items {
                     stream_result
                         .send(HourlyStatisticsGrpcModel {
