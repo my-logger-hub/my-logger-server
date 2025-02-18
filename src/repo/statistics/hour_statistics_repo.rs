@@ -169,10 +169,10 @@ impl HourStatisticsRepo {
         for by_day in read_access.values().rev() {
             for (hour_key, items) in by_day.items.iter().rev() {
                 result.insert(*hour_key, items.clone());
+            }
 
-                if result.len() >= amount {
-                    return result;
-                }
+            if result.len() >= amount {
+                return result;
             }
         }
 
