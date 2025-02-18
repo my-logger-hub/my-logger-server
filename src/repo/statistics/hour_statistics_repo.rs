@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use rust_extensions::{
     date_time::{DateTimeAsMicroseconds, DayKey, HourKey, IntervalKey},
@@ -10,10 +10,18 @@ use crate::log_item::LogEvent;
 
 use super::{persist::HourlyStatisticsFileContract, HourlyStatisticsModel};
 
-#[derive(Default)]
 pub struct HourStatisticsRepoInner {
     items: BTreeMap<IntervalKey<HourKey>, BTreeMap<String, HourlyStatisticsModel>>,
     has_to_write: bool,
+}
+
+impl Default for HourStatisticsRepoInner {
+    fn default() -> Self {
+        Self {
+            items: Default::default(),
+            has_to_write: true,
+        }
+    }
 }
 
 impl HourStatisticsRepoInner {
@@ -86,14 +94,16 @@ impl HourStatisticsRepo {
         }
     }
 
-    pub async fn new_events(&self, log_items: &[LogEvent]) {
+    pub async fn new_events(&self, log_items: &[Arc<LogEvent>]) {
         let mut inner_access = self.inner.write().await;
 
         for log_item in log_items {
             if let Some(application) = log_item.get_application() {
                 let hour_key: IntervalKey<HourKey> = log_item.timestamp.into();
+                println!("HourKey: {:?}", hour_key);
 
                 let day_key: IntervalKey<DayKey> = log_item.timestamp.into();
+                println!("DayKey: {:?}", day_key);
 
                 let by_day = match inner_access.get_mut(&day_key) {
                     Some(by_day) => by_day,

@@ -9,10 +9,6 @@ pub async fn post_items(app: &AppContext, mut log_events: Vec<LogEvent>) {
 
     app.ignore_events_repo.filter(&mut log_events).await;
 
-    app.hour_statistics_repo
-        .new_events(log_events.as_slice())
-        .await;
-
     let mut log_events: Vec<_> = log_events.into_iter().map(Arc::new).collect();
 
     let filtering_data = app
@@ -29,6 +25,10 @@ pub async fn post_items(app: &AppContext, mut log_events: Vec<LogEvent>) {
             }
         }
     }
+
+    app.hour_statistics_repo
+        .new_events(log_events.as_slice())
+        .await;
 
     if let Some(elastic) = &app.elastic {
         elastic.logs_queue.add(log_events.clone()).await;
