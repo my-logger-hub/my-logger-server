@@ -115,13 +115,12 @@ impl HourStatisticsRepo {
                     }
                 };
 
-                println!("ByDay: {:?}", by_day);
-
                 by_day.has_to_write = true;
 
                 let add_new = match by_day.items.get_mut(&hour_key) {
                     Some(by_hour_key) => {
                         if let Some(by_app) = by_hour_key.get_mut(application) {
+                            println!("Incremenging {:?}", log_item.level);
                             by_app.inc(log_item.level);
                             false
                         } else {
