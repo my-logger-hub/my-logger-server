@@ -10,6 +10,7 @@ use crate::log_item::LogEvent;
 
 use super::{persist::HourlyStatisticsFileContract, HourlyStatisticsModel};
 
+#[derive(Debug)]
 pub struct HourStatisticsRepoInner {
     items: BTreeMap<IntervalKey<HourKey>, BTreeMap<String, HourlyStatisticsModel>>,
     has_to_write: bool,
@@ -113,6 +114,8 @@ impl HourStatisticsRepo {
                         inner_access.get_mut(&day_key).unwrap()
                     }
                 };
+
+                println!("ByDay: {:?}", by_day);
 
                 by_day.has_to_write = true;
 
