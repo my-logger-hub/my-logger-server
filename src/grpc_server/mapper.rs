@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use rust_extensions::SortableId;
+
 use crate::{my_logger_grpc::*, repo::logs::LogEventFileGrpcModel};
 
 impl Into<crate::log_item::LogEvent> for LogEventGrpcModel {
@@ -13,7 +15,7 @@ impl Into<crate::log_item::LogEvent> for LogEventGrpcModel {
         }
 
         crate::log_item::LogEvent {
-            id: crate::utils::generate_log_id(),
+            id: SortableId::generate().into(),
             level,
 
             process: self.process_name.into(),
