@@ -41,7 +41,7 @@ my-sqlite = { tag = "0.1.2", git = "https://github.com/MyJetTools/my-sqlite.git"
 ] }
 
 async-trait = "*"
-tonic = { version = "*", features = ["tls", "tls-roots", "prost"] }
+tonic = { version = "0.12", features = ["tls", "tls-roots", "prost"] }
 anyhow = "*"
 tokio = { version = "*", features = ["full"] }
 hyper = { version = "*", features = ["full"] }
@@ -59,4 +59,4 @@ reqwest = "*"
 
 
 [build-dependencies]
-tonic-build = { version = "*", features = ["prost"] }
+tonic-build = { version = "0.12", features = ["prost"] }

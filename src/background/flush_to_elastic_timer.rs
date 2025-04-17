@@ -26,7 +26,7 @@ impl ElasticLogModel {
                 let mut model = serde_json::to_value(ElasticLogModel {
                     inner_id: value.id.clone(),
                     env_source: env_name.to_uppercase(),
-                    log_level: value.level.to_string().to_string(),
+                    log_level: value.level.as_str().to_string(),
                     process: AUTO_PANIC_HANDLER.to_string(),
                     message: "Auto panic handler".to_string(),
                     date: value.timestamp.unix_microseconds / 1000,
@@ -58,7 +58,7 @@ impl ElasticLogModel {
         let mut model = serde_json::to_value(ElasticLogModel {
             inner_id: value.id.clone(),
             env_source: env_name.to_uppercase(),
-            log_level: value.level.to_string().to_string(),
+            log_level: value.level.as_str().to_string(),
             process: value.process.clone().unwrap_or("N/A".to_string()),
             message: value.message.clone(),
             date: value.timestamp.unix_microseconds / 1000,
