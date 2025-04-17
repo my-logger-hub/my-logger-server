@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use my_http_server::{macros::*, types::RawDataTyped, HttpFailResult};
-use rust_extensions::date_time::DateTimeAsMicroseconds;
+use rust_extensions::{date_time::DateTimeAsMicroseconds, SortableId};
 use serde::Deserialize;
 
 use crate::{app::LogItem, http::controllers::shared_contract::LogLevelHttpModel};
@@ -31,7 +31,7 @@ impl PostJsonLogsV2InputData {
             let timestamp = timestamp.unwrap();
 
             result.push(LogItem {
-                id: crate::utils::generate_log_id(),
+                id: SortableId::generate().into(),
                 level: itm.level.into(),
                 process: itm.process,
                 message: itm.message,

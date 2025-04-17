@@ -16,7 +16,6 @@ mod insights_repo;
 mod repo;
 mod settings;
 mod telegram;
-mod utils;
 #[allow(non_snake_case)]
 pub mod my_logger_grpc {
     tonic::include_proto!("my_logger");

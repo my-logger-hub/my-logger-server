@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use my_http_server::{macros::MyHttpInput, types::RawData};
 use my_json::json_reader::JsonFirstLineIterator;
 use my_logger::LogLevel;
-use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec};
+use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec, SortableId};
 
 use crate::app::LogItem;
 
@@ -103,7 +103,7 @@ impl LogItem {
             return Err("Can not find message in log".to_string());
         }
         Ok(Self {
-            id: crate::utils::generate_log_id(),
+            id: SortableId::generate().into(),
             level,
             timestamp: if let Some(timestamp) = timestamp {
                 timestamp
