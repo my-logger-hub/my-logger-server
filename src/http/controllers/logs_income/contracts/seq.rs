@@ -88,6 +88,10 @@ impl LogItem {
                     let value = value.as_str().unwrap().to_string();
                     message = Some(value);
                 }
+                "MessageTemplate" => {
+                    let value = value.as_str().unwrap().to_string();
+                    message = Some(value);
+                }
                 "@mt" => {
                     let value = value.as_str().unwrap().to_string();
                     message = Some(value);

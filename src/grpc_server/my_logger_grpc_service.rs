@@ -28,7 +28,7 @@ impl MyLogger for GrpcService {
         .await
         .unwrap();
 
-        if let Some(items) = items {
+        if items.len() > 0 {
             crate::flows::post_items(&self.app, items).await;
         }
 
@@ -284,7 +284,7 @@ impl MyLogger for GrpcService {
 
             for (hour, items) in result {
                 for (app, statistics) in items {
-                    stream_result
+                    let _ = stream_result
                         .send(HourlyStatisticsGrpcModel {
                             hour_key: hour.get_value(),
                             app,

@@ -59,6 +59,7 @@ message IgnoreEventGrpcModel{
     LogLevelGrpcModel Level = 1;
     string Application = 2;
     string Marker = 3;
+    optional int64 Expiration = 4;
 }
 
 message DeleteIgnoreEventGrpcRequest{

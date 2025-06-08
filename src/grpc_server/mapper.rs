@@ -101,6 +101,7 @@ impl Into<IgnoreEventGrpcModel> for IgnoreItemDto {
             application: self.application,
             marker: self.marker,
             level: log_level_grpc as i32,
+            expiration: todo!(),
         }
     }
 }
