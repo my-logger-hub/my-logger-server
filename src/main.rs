@@ -23,7 +23,7 @@ pub mod my_logger_grpc {
 
 #[tokio::main]
 async fn main() {
-    let settings_reader = crate::settings::SettingsReader::new(".my-logger-server").await;
+    let settings_reader = crate::settings::SettingsReader::new("~/.my-logger-server").await;
     let settings_reader = Arc::new(settings_reader);
     let elastic_settings = settings_reader.get_elastic_settings().await;
     let app = Arc::new(AppContext::new(settings_reader).await);
