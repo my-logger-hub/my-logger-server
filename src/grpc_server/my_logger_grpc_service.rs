@@ -111,9 +111,10 @@ impl MyLogger for GrpcService {
             .await
         };
 
-        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
-            super::mapper::to_log_event_grpc_model(dto)
-        })
+        my_grpc_extensions::grpc_server_streams::send_vec_to_stream(
+            response.into_iter(),
+            move |dto| super::mapper::to_log_event_grpc_model(dto),
+        )
         .await
     }
 
@@ -190,9 +191,10 @@ impl MyLogger for GrpcService {
             }
         };
 
-        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), move |dto| {
-            super::mapper::to_log_event_grpc_model(dto)
-        })
+        my_grpc_extensions::grpc_server_streams::send_vec_to_stream(
+            response.into_iter(),
+            move |dto| super::mapper::to_log_event_grpc_model(dto),
+        )
         .await
     }
 
@@ -213,8 +215,10 @@ impl MyLogger for GrpcService {
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<Self::GetIgnoreEventsStream>, tonic::Status> {
         let response = self.app.settings_repo.get_ignore_events().await;
-        my_grpc_extensions::grpc_server::send_vec_to_stream(response.into_iter(), |dto| dto.into())
-            .await
+        my_grpc_extensions::grpc_server_streams::send_vec_to_stream(response.into_iter(), |dto| {
+            dto.into()
+        })
+        .await
     }
 
     async fn delete_ignore_event(
@@ -251,8 +255,10 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::GetIgnoreSingleEventsStream>, tonic::Status> {
         let result = crate::flows::ignore_single_event::get_all(&self.app).await;
 
-        my_grpc_extensions::grpc_server::send_vec_to_stream(result.into_iter(), |dto| dto.into())
-            .await
+        my_grpc_extensions::grpc_server_streams::send_vec_to_stream(result.into_iter(), |dto| {
+            dto.into()
+        })
+        .await
     }
 
     async fn delete_ignore_single_event(

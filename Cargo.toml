@@ -45,7 +45,7 @@ tonic = { version = "0.13", features = ["prost"] }
 anyhow = "*"
 tokio = { version = "*", features = ["full"] }
 hyper = { version = "*", features = ["full"] }
-prost = "*"
+prost = "0.13"
 serde = { version = "*", features = ["derive"] }
 tokio-util = "*"
 futures = "*"
