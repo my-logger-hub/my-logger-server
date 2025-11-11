@@ -16,6 +16,14 @@ pub async fn setup_server(app: Arc<AppContext>) {
     };
     let mut http_server = MyHttpServer::new(SocketAddr::from(([0, 0, 0, 0], http_port)));
 
+    let unix_socket = std::env::var("UNIX_SOCKET");
+
+    let mut unix_socket = if let Ok(unix_socket) = unix_socket {
+        Some(MyHttpServer::new_as_unix_socket(unix_socket))
+    } else {
+        None
+    };
+
     let controllers = Arc::new(super::builder::build_controllers(&app));
 
     let swagger_middleware = SwaggerMiddleware::new(
@@ -24,8 +32,15 @@ pub async fn setup_server(app: Arc<AppContext>) {
         crate::app::APP_VERSION.to_string(),
     );
 
-    http_server.add_middleware(Arc::new(swagger_middleware));
+    let swagger_middleware = Arc::new(swagger_middleware);
 
+    if let Some(unix_socket) = unix_socket.as_mut() {
+        unix_socket.add_middleware(swagger_middleware.clone());
+        unix_socket.add_middleware(controllers.clone());
+        unix_socket.start(app.app_states.clone(), my_logger::LOGGER.clone());
+    }
+
+    http_server.add_middleware(swagger_middleware);
     http_server.add_middleware(controllers);
 
     http_server.start(app.app_states.clone(), my_logger::LOGGER.clone());
