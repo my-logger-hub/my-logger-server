@@ -599,9 +599,11 @@ async fn search_hour(
         }
 
         if let Some(p) = &phrase_owned {
-            let qp = QueryParser::for_index(&index, vec![fields.text_search]);
-            if let Ok(q) = qp.parse_query(p) {
-                clauses.push((Occur::Must, q));
+            if !p.trim().is_empty() {
+                let qp = QueryParser::for_index(&index, vec![fields.text_search]);
+                if let Ok(q) = qp.parse_query(p) {
+                    clauses.push((Occur::Must, q));
+                }
             }
         }
 
