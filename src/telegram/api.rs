@@ -1,3 +1,6 @@
+use std::fmt::Write;
+
+use flurl::{body::UrlEncodedBody, FlUrl};
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::{app::LogItem, settings::TelegramSettings};
@@ -21,7 +24,7 @@ pub async fn send_notification_data(
     ui_url: String,
 ) {
 
-    if notification_data.fatal_errors ==0 && notification_data.errors == 0{
+    if notification_data.fatal_errors == 0 && notification_data.errors == 0 {
         return;
     }
     let url = format!(
@@ -29,50 +32,44 @@ pub async fn send_notification_data(
         telegram_settings.api_key
     );
 
+    let time_interval: DateTimeAsMicroseconds = notification_data.key.try_into().unwrap();
 
-    let time_interval: DateTimeAsMicroseconds = notification_data.key.clone().try_into().unwrap();
-
-
-    let ui_url = if ui_url.is_empty() {
-        "".to_string()
-    } else {
-        format!("<a href=\"{}\">LogsUi</a>", ui_url)
-    };
-
-    let telegram_statistics = format!(
-        "---\n📊<b>EnvInfo</b>:{}\n<b>Statistics of minute</b>: {}\n☠️<b>FatalErrors</b>: {}\n🟥<b>Errors</b>: {}\n⚠️<b>Warnings</b>: {}\n{}\n",
+    let mut telegram_statistics = String::with_capacity(256);
+    let _ = write!(
+        telegram_statistics,
+        "---\n📊<b>EnvInfo</b>:{}\n<b>Statistics of minute</b>: {}\n☠️<b>FatalErrors</b>: {}\n🟥<b>Errors</b>: {}\n⚠️<b>Warnings</b>: {}\n",
         env_name,
         time_interval.to_rfc3339(),
         notification_data.fatal_errors,
         notification_data.errors,
-        notification_data.warnings,                
-        ui_url
+        notification_data.warnings,
     );
+    if !ui_url.is_empty() {
+        let _ = write!(telegram_statistics, "<a href=\"{}\">LogsUi</a>", ui_url);
+    }
+    telegram_statistics.push('\n');
 
     println!("Sending telegram stats: {}", telegram_statistics);
 
-    let params = [
-        ("chat_id", telegram_settings.chat_id.to_string()),
-        (
+    let mut chat_id_buf = itoa::Buffer::new();
+    let mut thread_id_buf = itoa::Buffer::new();
+
+    let body = UrlEncodedBody::new()
+        .append("chat_id", chat_id_buf.format(telegram_settings.chat_id))
+        .append(
             "message_thread_id",
-            telegram_settings.message_thread_id.to_string(),
-        ),
-        ("parse_mode", "HTML".to_string()),
-        (
-            "text",
-            telegram_statistics,
-        ),
-    ];
+            thread_id_buf.format(telegram_settings.message_thread_id),
+        )
+        .append("parse_mode", "HTML")
+        .append("text", &telegram_statistics);
 
-    // Create a client and send a POST request to the API
+    let response = FlUrl::new(url.as_str())
+        .accept_invalid_certificate()
+        .with_retries(3)
+        .post(body)
+        .await;
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-
-    let _ = client.post(&url).form(&params).send().await;
-    
+    log_telegram_response("send_notification_data", response).await;
 
     println!("Minute Statistics{:?}", notification_data);
 }
@@ -82,143 +79,111 @@ pub async fn send_log_item(
     log_item: &LogItem,
     env_name: &str,
 ) {
-    // Set the API endpoint and parameters
     let url = format!(
         "https://api.telegram.org/bot{}/sendMessage",
         telegram_settings.api_key
     );
 
-    let process = if let Some(process) = log_item.process.as_ref() {
-        process
-    } else {
-        ""
-    };
+    let process = log_item.process.as_deref().unwrap_or("");
 
-    let params = [
-        ("chat_id", telegram_settings.chat_id.to_string()),
-        (
+    let mut text = String::with_capacity(512 + log_item.message.len() + log_item.ctx.len() * 32);
+    let _ = write!(
+        text,
+        "---\n{}\n{}\n<b>EnvInfo</b>:",
+        log_item.timestamp.to_rfc3339(),
+        log_item_level_to_telegram_str(log_item),
+    );
+    append_telegram_escaped(&mut text, env_name);
+    text.push_str("\n<b>Process</b>: ");
+    append_telegram_escaped(&mut text, process);
+    text.push_str("\n<b>Msg</b>: ");
+    append_telegram_escaped(&mut text, &log_item.message);
+    text.push_str("\n```Context:\n");
+    append_code_escaped_debug(&mut text, &log_item.ctx);
+    text.push_str("\n```\n");
+
+    let mut chat_id_buf = itoa::Buffer::new();
+    let mut thread_id_buf = itoa::Buffer::new();
+
+    let body = UrlEncodedBody::new()
+        .append("chat_id", chat_id_buf.format(telegram_settings.chat_id))
+        .append(
             "message_thread_id",
-            telegram_settings.message_thread_id.to_string(),
-        ),
-        ("parse_mode", "Markdown".to_string()),
-        (
-            "text",
-            format!(
-                "---\n{}\n{}\n<b>EnvInfo</b>:{}\n<b>Process</b>: {}\n<b>Msg</b>: {}\n```Context:\n{}\n```\n",
-                log_item.timestamp.to_rfc3339(),
-                log_item_level_to_telegram_str(&log_item),
-                format_telegram_message(env_name),
-                format_telegram_message(&process),
-                format_telegram_message(&log_item.message),
-                format_code_telegram_message(format!("{:#?}", log_item.ctx))
-            ),
-        ),
-    ];
+            thread_id_buf.format(telegram_settings.message_thread_id),
+        )
+        .append("parse_mode", "Markdown")
+        .append("text", &text);
 
-    // Create a client and send a POST request to the API
+    let response = FlUrl::new(url.as_str())
+        .accept_invalid_certificate()
+        .with_retries(3)
+        .post(body)
+        .await;
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-
-    let response = client.post(&url).form(&params).send().await;
-
-    println!("{:?}", response);
-
-    // Parse the JSON response
-    //let telegram_response: TelegramResponse = response.json().await?;
-
-    // Return the telegram response
+    log_telegram_response("send_log_item", response).await;
 }
 
-fn format_telegram_message(src: &str) -> String {
-    let mut result = String::new();
+async fn log_telegram_response(
+    fn_name: &str,
+    response: Result<flurl::FlUrlResponse, flurl::FlUrlError>,
+) {
+    match response {
+        Ok(mut response) => {
+            let status = response.get_status_code();
+            if !(200..300).contains(&status) {
+                let body = response.get_body_as_slice().await;
+                let body_str = body
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .unwrap_or("<binary>");
+                println!(
+                    "{}: telegram non-2xx status {}, body: {}",
+                    fn_name, status, body_str
+                );
+            }
+        }
+        Err(err) => {
+            println!("{}: telegram request failed: {:?}", fn_name, err);
+        }
+    }
+}
 
+fn append_telegram_escaped(dst: &mut String, src: &str) {
+    dst.reserve(src.len());
     for c in src.chars() {
         if c <= ' ' {
-            result.push(' ');
-        } else {
-            match c {
-                '_' => {
-                    result.push_str("\\_");
-                }
-                '*' => {
-                    result.push_str("\\*");
-                }
-                '[' => {
-                    result.push_str("\\[");
-                }
-                ']' => {
-                    result.push_str("\\]");
-                }
-                '(' => {
-                    result.push_str("\\(");
-                }
-                ')' => {
-                    result.push_str("\\)");
-                }
-                '~' => {
-                    result.push_str("\\~");
-                }
-                '`' => {
-                    result.push_str("\\`");
-                }
-                '>' => {
-                    result.push_str("\\>");
-                }
-                '#' => {
-                    result.push_str("\\#");
-                }
-                '+' => {
-                    result.push_str("\\+");
-                }
-                '-' => {
-                    result.push_str("\\-");
-                }
-                '=' => {
-                    result.push_str("\\=");
-                }
-                '|' => {
-                    result.push_str("\\|");
-                }
-                '{' => {
-                    result.push_str("\\{");
-                }
-                '}' => {
-                    result.push_str("\\}");
-                }
-                '.' => {
-                    result.push_str("\\.");
-                }
-                '!' => {
-                    result.push_str("\\!");
-                }
-                _ => {
-                    result.push(c);
-                }
+            dst.push(' ');
+            continue;
+        }
+        match c {
+            '_' | '*' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|'
+            | '{' | '}' | '.' | '!' => {
+                dst.push('\\');
+                dst.push(c);
             }
+            _ => dst.push(c),
         }
     }
-
-    result
 }
 
-fn format_code_telegram_message(src: String) -> String {
-    let mut result = String::new();
-
-    for c in src.chars() {
-        match c {
-            '`' => {
-                result.push_str("\\`");
+fn append_code_escaped_debug(dst: &mut String, ctx: &std::collections::BTreeMap<String, String>) {
+    use std::fmt::Write;
+    struct Escaper<'a>(&'a mut String);
+    impl<'a> std::fmt::Write for Escaper<'a> {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.0.reserve(s.len());
+            for c in s.chars() {
+                match c {
+                    '`' | '_' => {
+                        self.0.push('\\');
+                        self.0.push(c);
+                    }
+                    _ => self.0.push(c),
+                }
             }
-            '_' => {
-                result.push_str("\\_");
-            }
-            _ => {
-                result.push(c);
-            }
+            Ok(())
         }
     }
-    result
+    let _ = write!(Escaper(dst), "{:#?}", ctx);
 }
