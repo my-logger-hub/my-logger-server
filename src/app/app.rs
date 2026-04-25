@@ -39,6 +39,8 @@ pub struct AppContext {
 
     pub hourly_statistics: Mutex<HourlyStatistics>,
 
+    pub statistics_path: String,
+
     pub env_name: String,
 
     pub ui_url: Mutex<String>,
@@ -50,7 +52,12 @@ pub const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 impl AppContext {
     pub async fn new(settings_reader: Arc<crate::settings::SettingsReader>) -> Self {
         let logs_db_path = settings_reader.get_logs_db_path(None).await;
-        let settings_db_path = settings_reader.get_logs_db_path("settings.db".into()).await;
+        let settings_db_path = settings_reader
+            .get_logs_db_path("settings.json".into())
+            .await;
+        let statistics_path = settings_reader
+            .get_logs_db_path("statistics.json".into())
+            .await;
 
         let mut is_debug = false;
 
@@ -79,6 +86,7 @@ impl AppContext {
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
             hourly_statistics: Mutex::new(HourlyStatistics::new()),
+            statistics_path,
             elastic: settings_reader
                 .get_elastic_settings()
                 .await

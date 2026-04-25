@@ -5,6 +5,8 @@ use crate::app::{AppContext, LogItem};
 pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
     let log_events = filter_events(app, log_events).await;
 
+    let log_events = filter_single_ignore_events(app, log_events).await;
+
     {
         let mut hourly_statistics = app.hourly_statistics.lock().await;
         let mut telegram_notification_data = app.telegram_notification_data.lock().await;
@@ -27,6 +29,23 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
     }
 
     app.logs_queue.add(log_events).await;
+}
+
+async fn filter_single_ignore_events(
+    app: &AppContext,
+    log_events: Vec<Arc<LogItem>>,
+) -> Vec<Arc<LogItem>> {
+    let mut cache = app.ignore_single_event_cache.lock().await;
+
+    if !cache.initialized {
+        let items = super::ignore_single_event::persistence::get_all(app).await;
+        cache.init(items);
+    }
+
+    log_events
+        .into_iter()
+        .filter(|itm| !cache.skip_by_filtering(itm))
+        .collect()
 }
 
 async fn filter_events(app: &AppContext, mut log_events: Vec<LogItem>) -> Vec<Arc<LogItem>> {

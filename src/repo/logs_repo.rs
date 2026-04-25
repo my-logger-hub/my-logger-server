@@ -1,9 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    ops::Bound,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, ops::Bound, path::PathBuf, sync::Arc};
 
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 use tantivy::{

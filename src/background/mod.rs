@@ -6,3 +6,5 @@ mod gc_time;
 pub use gc_time::*;
 mod notify_telegram_timer;
 pub use notify_telegram_timer::*;
+mod persist_statistics_timer;
+pub use persist_statistics_timer::*;

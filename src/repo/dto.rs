@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
-use my_sqlite::macros::*;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
+use serde::{Deserialize, Serialize};
 
 use crate::app::LogItem;
 
-#[derive(DbEnumAsString, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogLevelDto {
     Info,
     Warning,
@@ -17,38 +17,23 @@ pub enum LogLevelDto {
 
 impl LogLevelDto {
     pub fn is_info(&self) -> bool {
-        match self {
-            LogLevelDto::Info => true,
-            _ => false,
-        }
+        matches!(self, LogLevelDto::Info)
     }
 
     pub fn is_warning(&self) -> bool {
-        match self {
-            LogLevelDto::Warning => true,
-            _ => false,
-        }
+        matches!(self, LogLevelDto::Warning)
     }
 
     pub fn is_error(&self) -> bool {
-        match self {
-            LogLevelDto::Error => true,
-            _ => false,
-        }
+        matches!(self, LogLevelDto::Error)
     }
 
     pub fn is_fatal_error(&self) -> bool {
-        match self {
-            LogLevelDto::FatalError => true,
-            _ => false,
-        }
+        matches!(self, LogLevelDto::FatalError)
     }
 
     pub fn is_debug(&self) -> bool {
-        match self {
-            LogLevelDto::Debug => true,
-            _ => false,
-        }
+        matches!(self, LogLevelDto::Debug)
     }
 }
 
@@ -79,16 +64,10 @@ pub struct StatisticsModel {
     pub count: i64,
 }
 
-#[derive(TableSchema, InsertDbEntity, SelectDbEntity, UpdateDbEntity, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IgnoreItemDto {
-    #[primary_key(0)]
-    #[generate_where_model("IgnoreWhereModel")]
     pub level: LogLevelDto,
-    #[primary_key(1)]
-    #[generate_where_model("IgnoreWhereModel")]
     pub application: String,
-    #[primary_key(2)]
-    #[generate_where_model("IgnoreWhereModel")]
     pub marker: String,
 }
 
@@ -107,5 +86,20 @@ impl IgnoreItemDto {
         }
 
         log_event.has_entry(self.marker.as_str())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IgnoreWhereModel {
+    pub level: LogLevelDto,
+    pub application: String,
+    pub marker: String,
+}
+
+impl IgnoreWhereModel {
+    pub fn matches(&self, item: &IgnoreItemDto) -> bool {
+        item.level == self.level
+            && item.application == self.application
+            && item.marker == self.marker
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
+use serde::{Deserialize, Serialize};
 
 use crate::app::LogItem;
 
@@ -8,13 +9,19 @@ use super::StatisticsHour;
 
 pub const MAX_HOURS_TO_KEEP: usize = 48;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct HourlyStatisticsItem {
     pub info: u32,
     pub warning: u32,
     pub error: u32,
     pub fatal_error: u32,
     pub debug: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedHour {
+    pub hour: u64,
+    pub apps: BTreeMap<String, HourlyStatisticsItem>,
 }
 
 pub struct HourlyStatistics {
@@ -26,6 +33,26 @@ impl HourlyStatistics {
         Self {
             data: BTreeMap::new(),
         }
+    }
+
+    pub fn restore_from_vec(&mut self, items: Vec<PersistedHour>) {
+        for entry in items {
+            if entry.apps.is_empty() {
+                continue;
+            }
+            let hour: StatisticsHour = entry.hour.into();
+            self.data.insert(hour, entry.apps);
+        }
+    }
+
+    pub fn snapshot(&self) -> Vec<PersistedHour> {
+        self.data
+            .iter()
+            .map(|(hour, apps)| PersistedHour {
+                hour: hour.get_value(),
+                apps: apps.clone(),
+            })
+            .collect()
     }
 
     pub fn update(&mut self, log_item: &LogItem) {

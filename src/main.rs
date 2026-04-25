@@ -28,6 +28,8 @@ async fn main() {
     let elastic_settings = settings_reader.get_elastic_settings().await;
     let app = Arc::new(AppContext::new(settings_reader).await);
 
+    crate::flows::init(&app).await;
+
     crate::http::start_up::setup_server(app.clone()).await;
 
     if let Some(elastic_settings) = elastic_settings {
@@ -52,6 +54,13 @@ async fn main() {
         Arc::new(NotifyTelegramTimer::new(app.clone())),
     );
     gc_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+
+    let mut persist_timer = MyTimer::new(Duration::from_secs(60));
+    persist_timer.register_timer(
+        "PersistStatistics",
+        Arc::new(PersistStatisticsTimer::new(app.clone())),
+    );
+    persist_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
 
     crate::grpc_server::start(app.clone());
 
