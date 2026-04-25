@@ -26,6 +26,7 @@ const F_LEVEL: &str = "level";
 const F_MESSAGE: &str = "message";
 const F_CTX: &str = "ctx";
 const F_CTX_DATA: &str = "ctx_data";
+const F_TEXT_SEARCH: &str = "text_search";
 
 #[derive(Clone)]
 struct SchemaFields {
@@ -35,13 +36,14 @@ struct SchemaFields {
     message: Field,
     ctx: Field,
     ctx_data: Field,
+    text_search: Field,
 }
 
-fn build_schema() -> (Schema, SchemaFields) {
+fn build_schema() -> Schema {
     let mut sb = Schema::builder();
 
-    let timestamp = sb.add_i64_field(F_TIMESTAMP, INDEXED | FAST | STORED);
-    let id = sb.add_text_field(F_ID, STORED);
+    sb.add_i64_field(F_TIMESTAMP, INDEXED | FAST | STORED);
+    sb.add_text_field(F_ID, STORED);
 
     let raw_indexed = TextOptions::default()
         .set_indexing_options(
@@ -50,8 +52,7 @@ fn build_schema() -> (Schema, SchemaFields) {
                 .set_index_option(IndexRecordOption::Basic),
         )
         .set_stored();
-
-    let level = sb.add_text_field(F_LEVEL, raw_indexed.clone());
+    sb.add_text_field(F_LEVEL, raw_indexed);
 
     let message_options = TextOptions::default()
         .set_indexing_options(
@@ -60,29 +61,38 @@ fn build_schema() -> (Schema, SchemaFields) {
                 .set_index_option(IndexRecordOption::WithFreqsAndPositions),
         )
         .set_stored();
-    let message = sb.add_text_field(F_MESSAGE, message_options);
+    sb.add_text_field(F_MESSAGE, message_options);
 
     let ctx_indexed_only = TextOptions::default().set_indexing_options(
         TextFieldIndexing::default()
             .set_tokenizer("raw")
             .set_index_option(IndexRecordOption::Basic),
     );
-    let ctx = sb.add_text_field(F_CTX, ctx_indexed_only);
+    sb.add_text_field(F_CTX, ctx_indexed_only);
 
-    let ctx_data = sb.add_text_field(F_CTX_DATA, STORED);
+    sb.add_text_field(F_CTX_DATA, STORED);
 
-    let schema = sb.build();
-    (
-        schema,
-        SchemaFields {
-            timestamp,
-            id,
-            level,
-            message,
-            ctx,
-            ctx_data,
-        },
-    )
+    let text_search_options = TextOptions::default().set_indexing_options(
+        TextFieldIndexing::default()
+            .set_tokenizer("default")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+    );
+    sb.add_text_field(F_TEXT_SEARCH, text_search_options);
+
+    sb.build()
+}
+
+fn fields_from_index(index: &Index) -> SchemaFields {
+    let s = index.schema();
+    SchemaFields {
+        timestamp: s.get_field(F_TIMESTAMP).unwrap(),
+        id: s.get_field(F_ID).unwrap(),
+        level: s.get_field(F_LEVEL).unwrap(),
+        message: s.get_field(F_MESSAGE).unwrap(),
+        ctx: s.get_field(F_CTX).unwrap(),
+        ctx_data: s.get_field(F_CTX_DATA).unwrap(),
+        text_search: s.get_field(F_TEXT_SEARCH).unwrap(),
+    }
 }
 
 fn level_term(level: &LogLevelDto) -> &'static str {
@@ -125,19 +135,16 @@ impl HourIndex {
     fn open_or_create(path: PathBuf) -> tantivy::Result<Self> {
         if let Ok(meta) = std::fs::metadata(&path) {
             if meta.is_file() {
-                println!(
-                    "Removing legacy SQLite shard at {}",
-                    path.display()
-                );
+                println!("Removing legacy SQLite shard at {}", path.display());
                 std::fs::remove_file(&path)
                     .map_err(|e| tantivy::TantivyError::IoError(Arc::new(e)))?;
             }
         }
         std::fs::create_dir_all(&path)
             .map_err(|e| tantivy::TantivyError::IoError(Arc::new(e)))?;
-        let (schema, fields) = build_schema();
         let dir = MmapDirectory::open(&path)?;
-        let index = Index::open_or_create(dir, schema)?;
+        let index = Index::open_or_create(dir, build_schema())?;
+        let fields = fields_from_index(&index);
         let reader = index
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
@@ -159,9 +166,9 @@ impl HourIndex {
             }
             Err(_) => return Ok(None),
         }
-        let (schema, fields) = build_schema();
         let dir = MmapDirectory::open(&path)?;
-        let index = Index::open_or_create(dir, schema)?;
+        let index = Index::open_or_create(dir, build_schema())?;
+        let fields = fields_from_index(&index);
         let reader = index
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
@@ -287,6 +294,14 @@ impl LogsRepo {
                 }
                 let ctx_json = serde_json::to_string(&item.context).unwrap_or_default();
                 doc.add_text(fields.ctx_data, ctx_json);
+                let mut buf =
+                    String::with_capacity(item.message.len() + item.context.len() * 16);
+                buf.push_str(&item.message);
+                for (_, v) in &item.context {
+                    buf.push(' ');
+                    buf.push_str(v);
+                }
+                doc.add_text(fields.text_search, buf);
                 writer.add_document(doc)?;
             }
             writer.commit()?;
@@ -591,7 +606,7 @@ async fn search_hour(
         }
 
         if let Some(p) = &phrase_owned {
-            let qp = QueryParser::for_index(&index, vec![fields.message]);
+            let qp = QueryParser::for_index(&index, vec![fields.text_search]);
             if let Ok(q) = qp.parse_query(p) {
                 clauses.push((Occur::Must, q));
             }
