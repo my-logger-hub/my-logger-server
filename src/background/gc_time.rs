@@ -91,10 +91,10 @@ async fn gc_files(app: &AppContext) {
         let file_name = app.logs_repo.compile_file_name(date_key);
         app.logs_repo.prepare_to_delete(date_key).await;
 
-        let result = tokio::fs::remove_file(file_name.as_str()).await;
+        let result = tokio::fs::remove_dir_all(file_name.as_str()).await;
 
         if let Err(err) = result {
-            panic!("Can not delete file {}. Err: {}", file_name, err);
+            panic!("Can not delete index {}. Err: {}", file_name, err);
         }
     }
 }

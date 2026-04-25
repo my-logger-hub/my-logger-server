@@ -40,6 +40,8 @@ my-sqlite = { tag = "0.1.2", git = "https://github.com/MyJetTools/my-sqlite.git"
     "macros",
 ] }
 
+tantivy = "0.26"
+
 async-trait = "*"
 tonic = { version = "0.13", features = ["prost"] }
 anyhow = "*"

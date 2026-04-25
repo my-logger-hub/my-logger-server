@@ -140,15 +140,15 @@ impl MyLogger for GrpcService {
 
         for itm in response {
             match itm.level {
-                crate::repo::dto::LogLevelDto::Info => result.info_count = itm.count.get_value(),
+                crate::repo::dto::LogLevelDto::Info => result.info_count = itm.count as i32,
                 crate::repo::dto::LogLevelDto::Warning => {
-                    result.warning_count = itm.count.get_value()
+                    result.warning_count = itm.count as i32
                 }
-                crate::repo::dto::LogLevelDto::Error => result.error_count = itm.count.get_value(),
+                crate::repo::dto::LogLevelDto::Error => result.error_count = itm.count as i32,
                 crate::repo::dto::LogLevelDto::FatalError => {
-                    result.fatal_count = itm.count.get_value()
+                    result.fatal_count = itm.count as i32
                 }
-                crate::repo::dto::LogLevelDto::Debug => result.debug_count = itm.count.get_value(),
+                crate::repo::dto::LogLevelDto::Debug => result.debug_count = itm.count as i32,
             }
         }
 

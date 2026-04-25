@@ -2,13 +2,11 @@ use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
 use my_sqlite::macros::*;
-use my_sqlite::sql::RawField;
-use my_sqlite::GroupByCount;
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::app::LogItem;
 
-#[derive(DbEnumAsString, Debug, Clone)]
+#[derive(DbEnumAsString, Debug, Clone, PartialEq, Eq)]
 pub enum LogLevelDto {
     Info,
     Warning,
@@ -66,110 +64,19 @@ impl<'s> Into<LogLevelDto> for &'s LogLevel {
     }
 }
 
-#[derive(TableSchema, InsertDbEntity, SelectDbEntity, Debug)]
+#[derive(Debug, Clone)]
 pub struct LogItemDto {
-    #[primary_key(0)]
-    #[sql_type("timestamp")]
-    #[order_by_desc]
     pub moment: DateTimeAsMicroseconds,
-    #[db_index(id:0, index_name:"id_idx", is_unique:true, order:"ASC")]
     pub id: String,
     pub level: LogLevelDto,
     pub message: String,
-    #[sql_type("jsonb")]
     pub context: BTreeMap<String, String>,
 }
 
-#[derive(WhereDbModel)]
-pub struct WhereModel {
-    #[sql_type("timestamp")]
-    #[db_column_name("moment")]
-    #[operator(">=")]
-    pub from_date: DateTimeAsMicroseconds,
-    #[sql_type("timestamp")]
-    #[ignore_if_none]
-    #[db_column_name("moment")]
-    #[operator("<=")]
-    pub to_date: Option<DateTimeAsMicroseconds>,
-    #[ignore_if_none]
-    pub level: Option<Vec<LogLevelDto>>,
-    #[sql_type("jsonb")]
-    #[ignore_if_none]
-    pub context: Option<BTreeMap<String, String>>,
-    #[limit]
-    pub take: usize,
-}
-
-#[derive(WhereDbModel)]
-pub struct WhereWithNoDateIntervalModel {
-    #[ignore_if_none]
-    pub level: Option<Vec<LogLevelDto>>,
-    #[sql_type("jsonb")]
-    #[ignore_if_none]
-    pub context: Option<BTreeMap<String, String>>,
-    #[limit]
-    pub take: usize,
-}
-
-#[derive(WhereDbModel)]
-pub struct ScanWhereModel {
-    #[sql_type("timestamp")]
-    #[db_column_name("moment")]
-    #[operator(">=")]
-    pub from_date: DateTimeAsMicroseconds,
-
-    #[sql_type("timestamp")]
-    #[db_column_name("moment")]
-    #[operator(">=")]
-    pub to_date: DateTimeAsMicroseconds,
-
-    #[limit]
-    pub take: usize,
-}
-
-#[where_raw_model("moment >= ${from_date} AND moment <= ${to_date} AND (message LIKE '%${phrase}%' OR context LIKE '%${phrase}%')")]
-pub struct WhereScanModel {
-    pub from_date: String,
-    pub to_date: String,
-    pub phrase: RawField,
-    pub limit: usize,
-}
-
-#[where_raw_model("message LIKE '%${phrase}%' OR context LIKE '%${phrase}%'")]
-pub struct WhereNoDatesScanModel {
-    pub phrase: RawField,
-    pub limit: usize,
-}
-
-#[derive(WhereDbModel)]
-pub struct DeleteLevelWhereModel {
-    #[operator("<=")]
-    #[sql_type("timestamp")]
-    pub moment: DateTimeAsMicroseconds,
-
-    pub level: LogLevelDto,
-}
-
-#[derive(WhereDbModel)]
-pub struct WhereStatisticsModel {
-    #[sql_type("timestamp")]
-    #[db_column_name("moment")]
-    #[operator(">=")]
-    pub from_date: DateTimeAsMicroseconds,
-    #[sql_type("timestamp")]
-    #[ignore_if_none]
-    #[db_column_name("moment")]
-    #[operator("<=")]
-    pub to_date: Option<DateTimeAsMicroseconds>,
-    #[ignore_if_none]
-    pub level: Option<Vec<LogLevelDto>>,
-}
-
-#[derive(SelectDbEntity)]
+#[derive(Debug, Clone)]
 pub struct StatisticsModel {
-    #[group_by]
     pub level: LogLevelDto,
-    pub count: GroupByCount<i32>,
+    pub count: i64,
 }
 
 #[derive(TableSchema, InsertDbEntity, SelectDbEntity, UpdateDbEntity, Debug)]
