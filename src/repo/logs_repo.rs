@@ -538,6 +538,7 @@ async fn search_hour(
     phrase: Option<&str>,
     take: usize,
 ) -> tantivy::Result<Vec<LogItemDto>> {
+    let take = if take == 0 { 1000 } else { take };
     let fields = hour.fields.clone();
     let reader = hour.reader.clone();
     let index = hour.index.clone();
@@ -613,7 +614,7 @@ async fn search_hour(
 
         let mut out = Vec::with_capacity(docs.len());
         for (_, addr) in docs {
-            let retrieved: TantivyDocument = searcher.doc(addr)?;
+            let retrieved = searcher.doc::<TantivyDocument>(addr)?;
             out.push(doc_to_dto(&retrieved, &fields));
         }
         Ok(out)

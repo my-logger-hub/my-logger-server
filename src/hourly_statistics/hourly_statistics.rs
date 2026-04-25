@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use my_logger::LogLevel;
 
-use crate::{app::LogItem, repo::HourStatisticsDto};
+use crate::app::LogItem;
 
 use super::StatisticsHour;
 
@@ -19,82 +19,34 @@ pub struct HourlyStatisticsItem {
 
 pub struct HourlyStatistics {
     data: BTreeMap<StatisticsHour, BTreeMap<String, HourlyStatisticsItem>>,
-    pub to_persist: BTreeMap<StatisticsHour, BTreeMap<String, HourlyStatisticsItem>>,
 }
 
 impl HourlyStatistics {
     pub fn new() -> Self {
         Self {
             data: BTreeMap::new(),
-            to_persist: BTreeMap::new(),
         }
-    }
-
-    pub fn restore(&mut self, data: HourStatisticsDto) {
-        let key = data.date_key.into();
-        if !self.data.contains_key(&key) {
-            self.data.insert(key, BTreeMap::new());
-        }
-
-        let by_date = self.data.get_mut(&key).unwrap();
-
-        by_date.insert(
-            data.app,
-            HourlyStatisticsItem {
-                info: data.info,
-                warning: data.warning,
-                error: data.error,
-                fatal_error: data.fatal_error,
-                debug: data.debug,
-            },
-        );
     }
 
     pub fn update(&mut self, log_item: &LogItem) {
-        let (key, app, itm) = {
-            let app = log_item.ctx.get("Application");
-
-            if app.is_none() {
-                return;
-            }
-
-            let app = app.unwrap();
-
-            let key: StatisticsHour = log_item.timestamp.into();
-            if !self.data.contains_key(&key) {
-                self.data.insert(key, BTreeMap::new());
-            }
-
-            let by_date = self.data.get_mut(&key).unwrap();
-
-            if !by_date.contains_key(app) {
-                by_date.insert(app.to_string(), HourlyStatisticsItem::default());
-            }
-
-            let by_app = by_date.get_mut(app).unwrap();
-
-            match log_item.level {
-                LogLevel::Info => by_app.info += 1,
-                LogLevel::Warning => by_app.warning += 1,
-                LogLevel::Error => by_app.error += 1,
-                LogLevel::FatalError => by_app.fatal_error += 1,
-                LogLevel::Debug => by_app.debug += 1,
-            }
-
-            (key, app.to_string(), by_app.clone())
+        let app = match log_item.ctx.get("Application") {
+            Some(a) => a,
+            None => return,
         };
 
-        self.set_to_persist(key, app, itm)
-    }
+        let key: StatisticsHour = log_item.timestamp.into();
+        let by_date = self.data.entry(key).or_insert_with(BTreeMap::new);
+        let by_app = by_date
+            .entry(app.to_string())
+            .or_insert_with(HourlyStatisticsItem::default);
 
-    fn set_to_persist(&mut self, key: StatisticsHour, app: String, itm: HourlyStatisticsItem) {
-        if !self.to_persist.contains_key(&key) {
-            self.to_persist.insert(key, BTreeMap::new());
+        match log_item.level {
+            LogLevel::Info => by_app.info += 1,
+            LogLevel::Warning => by_app.warning += 1,
+            LogLevel::Error => by_app.error += 1,
+            LogLevel::FatalError => by_app.fatal_error += 1,
+            LogLevel::Debug => by_app.debug += 1,
         }
-
-        let by_date = self.to_persist.get_mut(&key).unwrap();
-
-        by_date.insert(app, itm);
     }
 
     pub fn get_max_hours(

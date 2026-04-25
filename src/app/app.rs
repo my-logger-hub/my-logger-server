@@ -9,7 +9,7 @@ use crate::{
     hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
     insights_repo::InsightsRepo,
-    repo::{HourStatisticsRepo, LogsRepo, SettingsRepo},
+    repo::{LogsRepo, SettingsRepo},
     telegram::TelegramNotificationData,
 };
 
@@ -38,8 +38,6 @@ pub struct AppContext {
     pub insights_repo: InsightsRepo,
 
     pub hourly_statistics: Mutex<HourlyStatistics>,
-
-    pub hour_statistics_repo: HourStatisticsRepo,
 
     pub env_name: String,
 
@@ -81,12 +79,6 @@ impl AppContext {
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
             hourly_statistics: Mutex::new(HourlyStatistics::new()),
-            hour_statistics_repo: HourStatisticsRepo::new(
-                settings_reader
-                    .get_logs_db_path("hour_statistics.db".into())
-                    .await,
-            )
-            .await,
             elastic: settings_reader
                 .get_elastic_settings()
                 .await
