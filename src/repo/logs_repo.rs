@@ -128,6 +128,16 @@ struct HourIndex {
 
 impl HourIndex {
     fn open_or_create(path: PathBuf) -> tantivy::Result<Self> {
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.is_file() {
+                println!(
+                    "Removing legacy SQLite shard at {}",
+                    path.display()
+                );
+                std::fs::remove_file(&path)
+                    .map_err(|e| tantivy::TantivyError::IoError(Arc::new(e)))?;
+            }
+        }
         std::fs::create_dir_all(&path)
             .map_err(|e| tantivy::TantivyError::IoError(Arc::new(e)))?;
         let (schema, fields) = build_schema();
@@ -146,8 +156,13 @@ impl HourIndex {
     }
 
     fn open_existing(path: PathBuf) -> tantivy::Result<Option<Self>> {
-        if !path.exists() {
-            return Ok(None);
+        match std::fs::metadata(&path) {
+            Ok(meta) => {
+                if !meta.is_dir() {
+                    return Ok(None);
+                }
+            }
+            Err(_) => return Ok(None),
         }
         let (schema, fields) = build_schema();
         let dir = MmapDirectory::open(&path)?;
