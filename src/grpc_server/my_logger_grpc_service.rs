@@ -48,67 +48,43 @@ impl MyLogger for GrpcService {
         }
 
         let levels: Vec<_> = request.levels().collect();
+        let range = RequestType::from_request(request.from_time, request.to_time);
+        println!("ReadLogEventRequest in range: {:?}", range);
 
-        let response = if request.to_time == 0 {
-            let date_key = if request.from_time < 255 {
-                let mut now = DateTimeAsMicroseconds::now();
-                now.add_hours(request.from_time);
-                let date_key: DateHourKey = now.into();
-                date_key
-            } else {
-                let date_key: DateHourKey = request.from_time.into();
-                date_key
-            };
-
-            let levels = if levels.len() > 0 {
-                Some(levels.into_iter().map(|level| level.into()).collect())
-            } else {
-                None
-            };
-
-            let context = if request.context_keys.len() > 0 {
-                let mut ctx = BTreeMap::new();
-                for itm in request.context_keys {
-                    ctx.insert(itm.key, itm.value);
-                }
-                Some(ctx)
-            } else {
-                None
-            };
-
-            println!("ReadLogEventRequest at hour: {:?}", date_key);
-
-            self.app
-                .logs_repo
-                .get_from_certain_hour(date_key, levels, context, request.take as usize)
-                .await
-        } else {
-            let from_date = DateTimeAsMicroseconds::new(request.from_time);
-
-            let to_date = if request.to_time > 0 {
-                Some(DateTimeAsMicroseconds::new(request.to_time))
-            } else {
-                None
-            };
-
-            println!(
-                "ReadLogEventRequest at '{}'-'{}'",
-                from_date.to_rfc3339(),
-                if let Some(to_date) = to_date {
-                    to_date.to_rfc3339()
+        let response = match range {
+            RequestType::HourKey(date_key) => {
+                let levels = if levels.len() > 0 {
+                    Some(levels.into_iter().map(|level| level.into()).collect())
                 } else {
-                    "None".to_string()
-                }
-            );
-            crate::flows::get_events(
-                &self.app,
-                levels,
-                request.context_keys,
-                from_date,
-                to_date,
-                request.take as usize,
-            )
-            .await
+                    None
+                };
+
+                let context = if request.context_keys.len() > 0 {
+                    let mut ctx = BTreeMap::new();
+                    for itm in request.context_keys {
+                        ctx.insert(itm.key, itm.value);
+                    }
+                    Some(ctx)
+                } else {
+                    None
+                };
+
+                self.app
+                    .logs_repo
+                    .get_from_certain_hour(date_key, levels, context, request.take as usize)
+                    .await
+            }
+            RequestType::DateRange(from_date, to_date) => {
+                crate::flows::get_events(
+                    &self.app,
+                    levels,
+                    request.context_keys,
+                    from_date,
+                    Some(to_date),
+                    request.take as usize,
+                )
+                .await
+            }
         };
 
         my_grpc_extensions::grpc_server_streams::send_from_iterator_with_transformation(
@@ -168,7 +144,7 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let range = RequestType::from_scan_request(request.from_time, request.to_time);
+        let range = RequestType::from_request(request.from_time, request.to_time);
 
         println!("ScanAndSearchRequest in range: {:?}", range);
 
@@ -362,9 +338,9 @@ pub enum RequestType {
 }
 
 impl RequestType {
-    pub fn from_scan_request(from_time: i64, to_time: i64) -> Self {
+    pub fn from_request(from_time: i64, to_time: i64) -> Self {
         if to_time == 0 {
-            let date_key = if from_time < 0 {
+            let date_key = if from_time <= 0 {
                 let mut now = DateTimeAsMicroseconds::now();
                 now.add_hours(from_time);
                 let date_key: DateHourKey = now.into();

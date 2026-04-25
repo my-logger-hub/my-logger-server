@@ -54,14 +54,7 @@ fn build_schema() -> Schema {
         .set_stored();
     sb.add_text_field(F_LEVEL, raw_indexed);
 
-    let message_options = TextOptions::default()
-        .set_indexing_options(
-            TextFieldIndexing::default()
-                .set_tokenizer("default")
-                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
-        )
-        .set_stored();
-    sb.add_text_field(F_MESSAGE, message_options);
+    sb.add_text_field(F_MESSAGE, STORED);
 
     let ctx_indexed_only = TextOptions::default().set_indexing_options(
         TextFieldIndexing::default()
