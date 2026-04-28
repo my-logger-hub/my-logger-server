@@ -1,11 +1,7 @@
-use mcp_server_middleware::McpMiddleware;
 use my_http_server::{controllers::swagger::SwaggerMiddleware, MyHttpServer};
 use std::{net::SocketAddr, sync::Arc};
 
-use crate::{
-    app::{AppContext, APP_NAME, APP_VERSION},
-    mcp::SearchLogsHandler,
-};
+use crate::app::AppContext;
 
 const DEFAULT_PORT: u16 = 8000;
 
@@ -38,15 +34,7 @@ pub async fn setup_server(app: Arc<AppContext>) {
 
     let swagger_middleware = Arc::new(swagger_middleware);
 
-    let mut mcp = McpMiddleware::new(
-        "/mcp",
-        APP_NAME,
-        APP_VERSION,
-        "MyLogger MCP server: search_logs tool",
-    );
-    mcp.register_tool_call(Arc::new(SearchLogsHandler::new(app.clone())))
-        .await;
-    let mcp = Arc::new(mcp);
+    let mcp = Arc::new(crate::mcp::build_mcp_middleware(&app).await);
 
     if let Some(unix_socket) = unix_socket.as_mut() {
         unix_socket.add_middleware(swagger_middleware.clone());

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use my_ai_agent::{macros::ApplyJsonSchema, ToolDefinition};
 use rust_extensions::date_time::DateTimeAsMicroseconds;
@@ -6,27 +6,32 @@ use serde::{Deserialize, Serialize};
 
 use mcp_server_middleware::McpToolCall;
 
-use crate::{app::AppContext, repo::dto::LogLevelDto};
+use crate::{
+    app::{AppContext, PROCESS_CONTEXT_KEY},
+    repo::dto::{LogItemDto, LogLevelDto},
+};
+
+const APPLICATION_KEY: &str = "Application";
+const VERSION_KEY: &str = "Version";
+const DEFAULT_LIMIT: i64 = 100;
+const MAX_LIMIT: i64 = 1000;
 
 #[derive(ApplyJsonSchema, Debug, Serialize, Deserialize)]
 pub struct SearchLogsInputData {
-    #[property(description: "Free text phrase. Searched across message, process and context values. Empty or omitted means no phrase filter.")]
+    #[property(description: "Range start, ISO-8601 / RFC-3339 in UTC. Example: 2026-04-28T10:00:00Z. Inclusive.")]
+    pub from_date: String,
+
+    #[property(description: "Range end, ISO-8601 / RFC-3339 in UTC. Example: 2026-04-28T11:00:00Z. Inclusive.")]
+    pub to_date: String,
+
+    #[property(description: "Optional. Filter by application name. Matches the 'Application' context key. Case-insensitive.")]
+    pub application: Option<String>,
+
+    #[property(description: "Optional. Filter by application version. Matches the 'Version' context key. Case-insensitive.")]
+    pub version: Option<String>,
+
+    #[property(description: "Optional. Full-text search phrase across message and context (Tantivy QueryParser syntax). Empty or omitted means no phrase filter.")]
     pub phrase: Option<String>,
-
-    #[property(description: "Search in last N minutes from now. When greater than zero overrides from_time and to_time. Use this for queries like find errors in the last hour where N is 60.")]
-    pub last_minutes: Option<i64>,
-
-    #[property(description: "Range start as unix microseconds. Used only when last_minutes is omitted. Must be paired with to_time.")]
-    pub from_time: Option<i64>,
-
-    #[property(description: "Range end as unix microseconds. Used only when last_minutes is omitted. Must be paired with from_time.")]
-    pub to_time: Option<i64>,
-
-    #[property(description: "Filter by log levels. Allowed values are info warning error fatal_error debug. Empty or omitted means all levels.")]
-    pub levels: Option<Vec<String>>,
-
-    #[property(description: "Exact equality filters over context. Each entry is a string in the form key value separated by an equal sign. Case insensitive matching. Example Application billing.")]
-    pub context_filters: Option<Vec<String>>,
 
     #[property(description: "Maximum number of records to return. Default 100. Range 1 to 1000.")]
     pub take: Option<i64>,
@@ -34,7 +39,13 @@ pub struct SearchLogsInputData {
 
 #[derive(ApplyJsonSchema, Debug, Serialize, Deserialize)]
 pub struct SearchLogsResponse {
-    #[property(description: "Matching log records as JSON array string sorted by timestamp descending")]
+    #[property(description: "Number of records returned.")]
+    pub count: i64,
+
+    #[property(description: "True if the result was truncated by `take`. Re-query with a smaller time range or stricter filters if so.")]
+    pub truncated: bool,
+
+    #[property(description: "Matching log records as JSON array string sorted by timestamp ascending.")]
     pub items_json: String,
 }
 
@@ -50,7 +61,7 @@ impl SearchLogsHandler {
 
 impl ToolDefinition for SearchLogsHandler {
     const FUNC_NAME: &'static str = "search_logs";
-    const DESCRIPTION: &'static str = "Search log records. Combines optional phrase, level filter, key value context filters and time range. Time range can be given as last_minutes or as explicit from_time and to_time microseconds. Returns log records sorted by timestamp descending capped by take.";
+    const DESCRIPTION: &'static str = "Search log records by time range with optional application, version, and full-text phrase filters. Returns matching records sorted by timestamp ascending, capped by `take`.";
 }
 
 #[async_trait::async_trait]
@@ -59,137 +70,100 @@ impl McpToolCall<SearchLogsInputData, SearchLogsResponse> for SearchLogsHandler 
         &self,
         model: SearchLogsInputData,
     ) -> Result<SearchLogsResponse, String> {
-        let (from_us, to_us) = resolve_range(
-            model.last_minutes,
-            model.from_time,
-            model.to_time,
-        )?;
+        let from_dt = parse_iso_date(&model.from_date, "from_date")?;
+        let to_dt = parse_iso_date(&model.to_date, "to_date")?;
 
-        let take = model.take.unwrap_or(100).clamp(1, 1000) as usize;
+        if to_dt.unix_microseconds <= from_dt.unix_microseconds {
+            return Err("`to_date` must be strictly greater than `from_date`".to_string());
+        }
 
-        let levels = parse_levels(model.levels.as_deref())?;
-        let context = parse_context(model.context_filters.as_deref())?;
+        let take = model.take.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
+
+        let mut context = BTreeMap::new();
+        if let Some(app) = trimmed(model.application.as_deref()) {
+            context.insert(APPLICATION_KEY.to_string(), app.to_string());
+        }
+        if let Some(ver) = trimmed(model.version.as_deref()) {
+            context.insert(VERSION_KEY.to_string(), ver.to_string());
+        }
+        let context = if context.is_empty() {
+            None
+        } else {
+            Some(context)
+        };
+
         let phrase_owned = model
             .phrase
             .map(|p| p.trim().to_string())
             .filter(|p| !p.is_empty());
 
-        let from_dt = DateTimeAsMicroseconds::new(from_us);
-        let to_dt = DateTimeAsMicroseconds::new(to_us);
-
-        let items = self
+        let mut items = self
             .app
             .logs_repo
             .search(
                 from_dt,
                 to_dt,
-                levels,
+                None,
                 context,
                 phrase_owned.as_deref(),
                 take,
             )
             .await;
 
-        let mapped: Vec<serde_json::Value> = items
-            .into_iter()
-            .map(|i| {
-                serde_json::json!({
-                    "timestamp": i.moment.unix_microseconds,
-                    "iso_time": i.moment.to_rfc3339(),
-                    "level": format!("{:?}", i.level),
-                    "message": i.message,
-                    "context": i.context,
-                })
-            })
-            .collect();
+        items.sort_by_key(|i| i.moment.unix_microseconds);
 
+        let truncated = items.len() >= take;
+        let count = items.len() as i64;
+
+        let mapped: Vec<serde_json::Value> = items.into_iter().map(record_to_json).collect();
         let items_json = serde_json::to_string(&mapped).unwrap_or_else(|_| "[]".to_string());
-        Ok(SearchLogsResponse { items_json })
+
+        Ok(SearchLogsResponse {
+            count,
+            truncated,
+            items_json,
+        })
     }
 }
 
-fn resolve_range(
-    last_minutes: Option<i64>,
-    from_time: Option<i64>,
-    to_time: Option<i64>,
-) -> Result<(i64, i64), String> {
-    if let Some(minutes) = last_minutes {
-        if minutes > 0 {
-            let now = DateTimeAsMicroseconds::now();
-            let from = now.sub(Duration::from_secs((minutes as u64) * 60));
-            return Ok((from.unix_microseconds, now.unix_microseconds));
-        }
-    }
+fn parse_iso_date(value: &str, field: &str) -> Result<DateTimeAsMicroseconds, String> {
+    DateTimeAsMicroseconds::parse_iso_string(value).ok_or_else(|| {
+        format!(
+            "`{}` is not a valid ISO-8601 / RFC-3339 datetime: '{}'",
+            field, value
+        )
+    })
+}
 
-    match (from_time, to_time) {
-        (Some(from), Some(to)) if from > 0 && to > 0 => {
-            if from >= to {
-                Err("from_time must be less than to_time".to_string())
-            } else {
-                Ok((from, to))
-            }
-        }
-        _ => Err(
-            "Specify either last_minutes or both from_time and to_time as unix microseconds"
-                .to_string(),
-        ),
+fn trimmed(value: Option<&str>) -> Option<&str> {
+    value
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn level_to_str(level: &LogLevelDto) -> &'static str {
+    match level {
+        LogLevelDto::Info => "Info",
+        LogLevelDto::Warning => "Warning",
+        LogLevelDto::Error => "Error",
+        LogLevelDto::FatalError => "FatalError",
+        LogLevelDto::Debug => "Debug",
     }
 }
 
-fn parse_levels(levels: Option<&[String]>) -> Result<Option<Vec<LogLevelDto>>, String> {
-    let arr = match levels {
-        Some(a) if !a.is_empty() => a,
-        _ => return Ok(None),
-    };
-    let mut out = Vec::with_capacity(arr.len());
-    for raw in arr {
-        let s = raw.trim().to_ascii_lowercase();
-        let lvl = match s.as_str() {
-            "info" => LogLevelDto::Info,
-            "warning" => LogLevelDto::Warning,
-            "error" => LogLevelDto::Error,
-            "fatal_error" | "fatalerror" | "fatal" => LogLevelDto::FatalError,
-            "debug" => LogLevelDto::Debug,
-            other => {
-                return Err(format!(
-                    "Unknown level {}. Allowed info warning error fatal_error debug",
-                    other
-                ));
-            }
-        };
-        out.push(lvl);
-    }
-    Ok(Some(out))
-}
+fn record_to_json(mut item: LogItemDto) -> serde_json::Value {
+    let application = item.context.remove(APPLICATION_KEY);
+    let version = item.context.remove(VERSION_KEY);
+    let process = item.context.remove(PROCESS_CONTEXT_KEY);
 
-fn parse_context(
-    filters: Option<&[String]>,
-) -> Result<Option<BTreeMap<String, String>>, String> {
-    let arr = match filters {
-        Some(a) if !a.is_empty() => a,
-        _ => return Ok(None),
-    };
-    let mut map = BTreeMap::new();
-    for raw in arr {
-        let mut split = raw.splitn(2, '=');
-        let key = split.next().unwrap_or("").trim();
-        let value = match split.next() {
-            Some(v) => v.trim(),
-            None => {
-                return Err(format!(
-                    "context_filters entry must be in key=value form, got: {}",
-                    raw
-                ));
-            }
-        };
-        if key.is_empty() {
-            continue;
-        }
-        map.insert(key.to_string(), value.to_string());
-    }
-    if map.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(map))
-    }
+    serde_json::json!({
+        "iso_time": item.moment.to_rfc3339(),
+        "timestamp": item.moment.unix_microseconds,
+        "level": level_to_str(&item.level),
+        "application": application,
+        "version": version,
+        "process": process,
+        "message": item.message,
+        "context": item.context,
+    })
 }
