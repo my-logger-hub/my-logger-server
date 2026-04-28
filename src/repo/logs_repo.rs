@@ -408,6 +408,44 @@ impl LogsRepo {
         result
     }
 
+    pub async fn search(
+        &self,
+        from_date: DateTimeAsMicroseconds,
+        to_date: DateTimeAsMicroseconds,
+        levels: Option<Vec<LogLevelDto>>,
+        context: Option<BTreeMap<String, String>>,
+        phrase: Option<&str>,
+        limit: usize,
+    ) -> Vec<LogItemDto> {
+        let keys = DateHourKey::get_keys_to_request(from_date, to_date);
+        let mut result: Vec<LogItemDto> = Vec::new();
+        for date_key in keys.keys().rev() {
+            let hour = match self.get_hour(*date_key).await {
+                Some(h) => h,
+                None => continue,
+            };
+            match search_hour(
+                &hour,
+                Some(from_date.unix_microseconds),
+                Some(to_date.unix_microseconds),
+                levels.as_deref(),
+                context.as_ref(),
+                phrase,
+                limit,
+            )
+            .await
+            {
+                Ok(items) => result.extend(items),
+                Err(e) => println!("Error: {:?}", e),
+            }
+            if result.len() >= limit {
+                break;
+            }
+        }
+        result.truncate(limit);
+        result
+    }
+
     pub async fn scan_from_exact_hour(
         &self,
         hour_key: DateHourKey,

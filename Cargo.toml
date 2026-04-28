@@ -38,7 +38,14 @@ elastic-client = { git = "https://github.com/MyJetTools/elastic-client", tag = "
 
 tantivy = "0.26"
 
+mcp-server-middleware = { tag = "0.8.3", git = "https://github.com/my-ai-utils/mcp-server-middleware.git" }
+my-ai-agent = { tag = "0.1.0", git = "https://github.com/my-ai-utils/my-ai-agent.git", features = [
+    "agent",
+] }
+
 async-trait = "*"
+syn = "2"
+base64 = "0.22"
 tonic = "0.14"
 tonic-prost = "0.14"
 anyhow = "*"

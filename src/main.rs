@@ -13,6 +13,7 @@ mod hourly_statistics;
 mod http;
 mod ignore_single_events;
 mod insights_repo;
+mod mcp;
 mod repo;
 mod settings;
 mod telegram;

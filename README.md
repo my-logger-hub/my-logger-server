@@ -1,49 +1,84 @@
 # my-logger-server
 
-Лог-сервер на Rust. Принимает логи по gRPC/HTTP, хранит локально и (опционально) форвардит в Elastic и Telegram.
+Log server in Rust. Accepts logs over gRPC/HTTP, stores them locally, and (optionally) forwards to Elastic and Telegram.
 
-## Хранение логов
+## Log storage
 
-Логи хранятся в [Tantivy](https://github.com/quickwit-oss/tantivy) — встроенном поисковом движке на чистом Rust. Никакого внешнего процесса (SQLite/Elastic/JVM) для хранения логов не требуется.
+Logs are stored in [Tantivy](https://github.com/quickwit-oss/tantivy) — an embedded search engine in pure Rust. No external process (SQLite/Elastic/JVM) is needed for storage.
 
-### Шардинг по часу
+### Hourly sharding
 
-Каждый час получает свой Tantivy-индекс — отдельная папка вида `logs-YYYYMMDDHH` внутри `LogsDbPath`. Это даёт:
+Each hour gets its own Tantivy index — a separate folder named `logs-YYYYMMDDHH` inside `LogsDbPath`. This gives:
 
-- **Pruning по времени**: запрос с интервалом `[from..to]` физически открывает только нужные часовые индексы.
-- **Простой retention**: GC удаляет папку целиком (`remove_dir_all`), без `DELETE` и vacuum.
+- **Time-based pruning**: a query with interval `[from..to]` opens only the hour shards inside that range.
+- **Trivial retention**: GC removes the whole folder (`remove_dir_all`), no `DELETE` or vacuum.
 
-### Схема индекса
+### Index schema
 
-| Поле         | Тип                          | Назначение                                                  |
-|--------------|------------------------------|-------------------------------------------------------------|
-| `timestamp`  | `i64` INDEXED + FAST + STORED | range-фильтр и сортировка DESC по времени                  |
-| `id`         | STORED                       | идентификатор записи                                        |
-| `level`      | STRING (raw, lowercase)      | точное совпадение по уровню                                 |
-| `message`    | TEXT (default + lowercase)   | полнотекстовый поиск со стеммингом                          |
-| `ctx`        | STRING multi-value (raw)     | каждая пара контекста индексируется как `key=value` lowercase |
-| `ctx_data`   | STORED                       | JSON оригинального контекста (с исходным регистром)         |
+| Field         | Type                            | Purpose                                                  |
+|---------------|---------------------------------|----------------------------------------------------------|
+| `timestamp`   | `i64` INDEXED + FAST + STORED   | range filter and DESC ordering                           |
+| `id`          | STORED                          | record identifier                                        |
+| `level`       | STRING (raw, lowercase)         | exact level match                                        |
+| `message`     | STORED                          | returned to clients (full-text covered by `text_search`) |
+| `ctx`         | STRING multi-value (raw)        | each context pair indexed as `key=value` lowercase       |
+| `ctx_data`    | STORED                          | original-case context as JSON for retrieval              |
+| `text_search` | TEXT (default + lowercase)      | full-text over `message` + process + context values      |
 
-Контекст индексируется в нижнем регистре для регистронезависимого поиска, но возвращается клиенту в исходном виде (через `ctx_data`).
+Context is indexed in lowercase for case-insensitive lookup, but returned to clients with original case via `ctx_data`.
 
-### Сценарии поиска
+### Query patterns
 
-Все поиски ограничены интервалом времени. Пример комбинированного запроса:
+Every query is bounded by a time interval. Example combined query:
 
 ```
 timestamp:[from..to]
   AND level:error
   AND ctx:"application=billing"
   AND ctx:"version=1.4.2"
-  AND message:timeout
+  AND text_search:timeout
 ```
 
-Возвращает топ-N результатов, отсортированных по `timestamp DESC` через FAST-поле — десятки миллисекунд на миллионах записей.
+Returns top-N results sorted by `timestamp DESC` via the FAST field — tens of milliseconds even on millions of records.
 
 ### GC
 
-- `gc_files` — удаляет шарды старше `hours_to_gc`.
-- `gc_level` — внутри последних двух шардов точечно удаляет логи уровней Debug/Info (старше 60 минут) и Warning (старше 6 часов) через `IndexWriter::delete_query`.
+- `gc_files` — deletes shards older than `hours_to_gc`.
+- `gc_level` — inside the last two shards, prunes Debug/Info older than 60 minutes and Warning older than 6 hours via `IndexWriter::delete_query`.
+
+## MCP server (read-only for AI)
+
+The server exposes an MCP endpoint at **`/mcp`** on the main HTTP port (Streamable HTTP transport, JSON-RPC 2.0 + SSE). Implemented via `mcp-server-middleware` on top of `my-http-server` ([src/http/start_up.rs](src/http/start_up.rs), [src/mcp/](src/mcp/)).
+
+Goal: let AI assistants read logs. Write/admin operations are **not exposed** through MCP — the endpoint is strictly read-only.
+
+### One registered tool: `search_logs`
+
+Combines every filter shape in a single call. All parameters are optional except the time-range pair.
+
+| Parameter         | Type            | Purpose                                                                       |
+|-------------------|-----------------|-------------------------------------------------------------------------------|
+| `phrase`          | `string`        | Full-text search over message, process, and context values.                   |
+| `last_minutes`    | `integer`       | If > 0, range becomes `[now − N min..now]`. Overrides `from_time`/`to_time`.  |
+| `from_time`       | `integer` (us)  | Used only when `last_minutes` is absent. Must be paired with `to_time`.       |
+| `to_time`         | `integer` (us)  | Paired with `from_time`. Must satisfy `from_time` < `to_time`.                |
+| `levels`          | `string[]`      | One of `info`, `warning`, `error`, `fatal_error`, `debug`. Case-insensitive.  |
+| `context_filters` | `string[]`      | List of `key=value` entries for exact context match.                          |
+| `take`            | `integer`       | Limit. Default 100, range 1..1000.                                            |
+
+**Response** — field `items_json` containing a JSON array sorted by `timestamp DESC`. Each item has `timestamp`, `iso_time`, `level`, `message`, `context` (preserving original case).
+
+### Typical AI queries
+
+| User intent                                          | Tool-call arguments                                                         |
+|------------------------------------------------------|-----------------------------------------------------------------------------|
+| "logs for the last hour"                             | `{ "last_minutes": 60 }`                                                    |
+| "errors in the last 30 minutes"                      | `{ "last_minutes": 30, "levels": ["error", "fatal_error"] }`                |
+| "what billing was doing in the last hour"            | `{ "last_minutes": 60, "context_filters": ["Application=billing"] }`        |
+| "find timeout in logs for the last 2 hours"          | `{ "last_minutes": 120, "phrase": "timeout" }`                              |
+| "billing v1.4.2 errors over last 24h"                | `{ "last_minutes": 1440, "levels": ["error"], "context_filters": ["Application=billing", "Version=1.4.2"] }` |
+
+What AI **cannot** do via MCP: write logs, modify ignore-events, trigger GC, read dashboard statistics, or change settings. Search only.
 
 ## Settings
 
@@ -62,4 +97,4 @@ TelegramSettings:
   env_info: string
 ```
 
-`LogsDbPath` — корневая папка, в которой создаются часовые подпапки-индексы и сопровождающие SQLite-файлы (`settings.db`, `hour_statistics.db`).
+`LogsDbPath` — root directory that holds hourly Tantivy index folders (`logs-YYYYMMDDHH/`) plus `settings.json` (ignore-events) and `statistics.json` (hourly aggregates).
