@@ -33,6 +33,12 @@ pub struct SearchLogsInputData {
     #[property(description: "Optional. Full-text search phrase across message and context (Tantivy QueryParser syntax). Empty or omitted means no phrase filter.")]
     pub phrase: Option<String>,
 
+    #[property(
+        enum: ["Info", "Warning", "Error", "FatalError", "Debug"],
+        description: "Optional. Filter by log levels. If omitted or empty, all levels match. Pass any subset, e.g. [\"Error\", \"FatalError\"]."
+    )]
+    pub levels: Option<Vec<String>>,
+
     #[property(description: "Maximum number of records to return. Default 100. Range 1 to 1000.")]
     pub take: Option<i64>,
 }
@@ -97,13 +103,22 @@ impl McpToolCall<SearchLogsInputData, SearchLogsResponse> for SearchLogsHandler 
             .map(|p| p.trim().to_string())
             .filter(|p| !p.is_empty());
 
+        let levels = match model.levels {
+            Some(v) if !v.is_empty() => {
+                let parsed: Result<Vec<_>, _> =
+                    v.iter().map(|s| parse_level(s.as_str())).collect();
+                Some(parsed?)
+            }
+            _ => None,
+        };
+
         let mut items = self
             .app
             .logs_repo
             .search(
                 from_dt,
                 to_dt,
-                None,
+                levels,
                 context,
                 phrase_owned.as_deref(),
                 take,
@@ -139,6 +154,20 @@ fn trimmed(value: Option<&str>) -> Option<&str> {
     value
         .map(str::trim)
         .filter(|s| !s.is_empty())
+}
+
+fn parse_level(value: &str) -> Result<LogLevelDto, String> {
+    match value {
+        "Info" => Ok(LogLevelDto::Info),
+        "Warning" => Ok(LogLevelDto::Warning),
+        "Error" => Ok(LogLevelDto::Error),
+        "FatalError" => Ok(LogLevelDto::FatalError),
+        "Debug" => Ok(LogLevelDto::Debug),
+        other => Err(format!(
+            "invalid log level '{}'. Allowed: Info, Warning, Error, FatalError, Debug",
+            other
+        )),
+    }
 }
 
 fn level_to_str(level: &LogLevelDto) -> &'static str {
