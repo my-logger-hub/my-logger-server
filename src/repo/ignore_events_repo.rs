@@ -31,6 +31,19 @@ impl SettingsRepo {
         write_access.clone()
     }
 
+    /// Removes expired ignore rules. Returns `true` if anything was removed.
+    pub async fn gc_expired(&self) -> bool {
+        let mut write_access = self.items.lock().await;
+        let now = DateTimeAsMicroseconds::now();
+        let before = write_access.len();
+        write_access.retain(|item| !item.is_expired(now));
+        if write_access.len() == before {
+            return false;
+        }
+        persist(&self.path, &write_access).await;
+        true
+    }
+
     pub async fn add_ignore_event(&self, item: &IgnoreItemDto) {
         let mut write_access = self.items.lock().await;
         if let Some(existing) = write_access.iter_mut().find(|x| {

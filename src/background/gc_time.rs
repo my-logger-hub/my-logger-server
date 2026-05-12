@@ -52,6 +52,10 @@ impl MyTimerTick for GcTimer {
         gc_files(&self.app).await;
 
         self.app.ignore_single_event_cache.lock().await.gc();
+
+        if self.app.settings_repo.gc_expired().await {
+            self.app.filter_events_cache.reset().await;
+        }
     }
 }
 
