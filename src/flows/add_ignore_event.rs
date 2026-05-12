@@ -10,9 +10,10 @@ use crate::{
 pub async fn add_ignore_event(app: &AppContext, event: IgnoreItemDto) {
     app.settings_repo
         .add_ignore_event(&IgnoreItemDto {
-            level: event.level.clone().into(),
+            level: event.level.clone(),
             application: event.application.to_string(),
             marker: event.marker.to_string(),
+            expires_at: event.expires_at,
         })
         .await;
 
@@ -27,6 +28,12 @@ pub async fn add_ignore_event(app: &AppContext, event: IgnoreItemDto) {
         ctx.insert("Level".to_string(), format!("{:?}", &event.level));
         ctx.insert("Application".to_string(), event.application);
         ctx.insert("Marker".to_string(), event.marker);
+        if let Some(expires_at) = event.expires_at {
+            ctx.insert(
+                "ExpiresAt".to_string(),
+                DateTimeAsMicroseconds::new(expires_at).to_rfc3339(),
+            );
+        }
 
         crate::telegram::api::send_log_item(
             &telegram_settings,

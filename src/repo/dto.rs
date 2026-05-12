@@ -69,10 +69,24 @@ pub struct IgnoreItemDto {
     pub level: LogLevelDto,
     pub application: String,
     pub marker: String,
+    /// Optional expiration moment as unix microseconds. `None` means the rule never expires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
 }
 
 impl IgnoreItemDto {
+    pub fn is_expired(&self, now: DateTimeAsMicroseconds) -> bool {
+        match self.expires_at {
+            Some(expires_at) => expires_at <= now.unix_microseconds,
+            None => false,
+        }
+    }
+
     pub fn matches_ignore_filter(&self, log_event: &LogItem) -> bool {
+        if self.is_expired(DateTimeAsMicroseconds::now()) {
+            return false;
+        }
+
         if !log_event.is_level(&self.level) {
             return false;
         }

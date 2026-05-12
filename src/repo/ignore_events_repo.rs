@@ -1,3 +1,4 @@
+use rust_extensions::date_time::DateTimeAsMicroseconds;
 use tokio::sync::Mutex;
 
 use super::dto::*;
@@ -20,19 +21,28 @@ impl SettingsRepo {
     }
 
     pub async fn get_ignore_events(&self) -> Vec<IgnoreItemDto> {
-        let read_access = self.items.lock().await;
-        read_access.clone()
+        let mut write_access = self.items.lock().await;
+        let now = DateTimeAsMicroseconds::now();
+        let before = write_access.len();
+        write_access.retain(|item| !item.is_expired(now));
+        if write_access.len() != before {
+            persist(&self.path, &write_access).await;
+        }
+        write_access.clone()
     }
 
     pub async fn add_ignore_event(&self, item: &IgnoreItemDto) {
         let mut write_access = self.items.lock().await;
-        if write_access
-            .iter()
-            .any(|x| x.level == item.level && x.application == item.application && x.marker == item.marker)
-        {
-            return;
+        if let Some(existing) = write_access.iter_mut().find(|x| {
+            x.level == item.level && x.application == item.application && x.marker == item.marker
+        }) {
+            if existing.expires_at == item.expires_at {
+                return;
+            }
+            existing.expires_at = item.expires_at;
+        } else {
+            write_access.push(item.clone());
         }
-        write_access.push(item.clone());
         persist(&self.path, &write_access).await;
     }
 

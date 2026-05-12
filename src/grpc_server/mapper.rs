@@ -90,6 +90,7 @@ impl Into<IgnoreItemDto> for IgnoreEventGrpcModel {
             level: self.level().into(),
             application: self.application,
             marker: self.marker,
+            expires_at: self.expiration,
         }
     }
 }
@@ -101,7 +102,7 @@ impl Into<IgnoreEventGrpcModel> for IgnoreItemDto {
             application: self.application,
             marker: self.marker,
             level: log_level_grpc as i32,
-            expiration: Default::default(),
+            expiration: self.expires_at,
         }
     }
 }

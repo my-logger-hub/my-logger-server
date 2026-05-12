@@ -36,6 +36,7 @@ async fn handle_request(
             level: input_data.level.into(),
             application: input_data.application,
             marker: input_data.marker,
+            expires_at: input_data.expiration,
         },
     )
     .await;

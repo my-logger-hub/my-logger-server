@@ -37,6 +37,7 @@ async fn handle_request(
             level: format!("{:?}", itm.level),
             application: itm.application,
             marker: itm.marker,
+            expiration: itm.expires_at,
         });
     }
 

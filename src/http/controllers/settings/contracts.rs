@@ -13,6 +13,9 @@ pub struct PostIgnoreMaskHttpInput {
 
     #[http_body(description: "Filter marker")]
     pub marker: String,
+
+    #[http_body(description: "Optional expiration moment as unix microseconds. Omit for a rule that never expires.")]
+    pub expiration: Option<i64>,
 }
 
 #[derive(Debug, MyHttpInput)]
@@ -32,4 +35,6 @@ pub struct IgnoreEventHttpModel {
     pub level: String,
     pub application: String,
     pub marker: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiration: Option<i64>,
 }
