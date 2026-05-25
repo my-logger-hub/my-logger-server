@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, time::Duration};
 
-use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct};
+use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct, TimeStruct};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 
@@ -41,6 +41,32 @@ impl DateHourKey {
         }
 
         result
+    }
+
+    pub fn hour_start(&self) -> DateTimeAsMicroseconds {
+        let v = self.0;
+        let year = (v / 1000000) as i32;
+        let month = ((v / 10000) % 100) as u32;
+        let day = ((v / 100) % 100) as u32;
+        let hour = (v % 100) as u32;
+        let dts = DateTimeStruct {
+            year,
+            month,
+            day,
+            time: TimeStruct {
+                hour,
+                min: 0,
+                sec: 0,
+                micros: 0,
+            },
+            dow: None,
+        };
+        dts.try_into().unwrap()
+    }
+
+    pub fn hour_end(&self) -> DateTimeAsMicroseconds {
+        let start = self.hour_start();
+        start.add(Duration::from_secs(60 * 60))
     }
 
     pub fn parse_from_str(value: &str) -> Option<Self> {

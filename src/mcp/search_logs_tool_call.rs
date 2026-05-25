@@ -112,18 +112,16 @@ impl McpToolCall<SearchLogsInputData, SearchLogsResponse> for SearchLogsHandler 
             _ => None,
         };
 
-        let mut items = self
-            .app
-            .logs_repo
-            .search(
-                from_dt,
-                to_dt,
-                levels,
-                context,
-                phrase_owned.as_deref(),
-                take,
-            )
-            .await;
+        let mut items = crate::flows::search_logs(
+            &self.app,
+            from_dt,
+            to_dt,
+            levels,
+            context,
+            phrase_owned.as_deref(),
+            take,
+        )
+        .await;
 
         items.sort_by_key(|i| i.moment.unix_microseconds);
 

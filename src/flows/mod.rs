@@ -8,6 +8,8 @@ mod search_and_scan;
 pub use search_and_scan::*;
 mod get_events;
 pub use get_events::*;
+mod search_logs;
+pub use search_logs::*;
 mod init;
 pub use init::*;
 pub mod ignore_single_event;

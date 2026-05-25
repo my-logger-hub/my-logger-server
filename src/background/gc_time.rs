@@ -31,22 +31,26 @@ impl MyTimerTick for GcTimer {
         self.app.logs_repo.gc(to_date).await;
 
         let mut to_date = DateTimeAsMicroseconds::now();
-        to_date.add_minutes(-60);
-        self.app
-            .logs_repo
-            .gc_level(to_date, crate::repo::dto::LogLevelDto::Debug)
-            .await;
-        self.app
-            .logs_repo
-            .gc_level(to_date, crate::repo::dto::LogLevelDto::Info)
-            .await;
-
-        let mut to_date = DateTimeAsMicroseconds::now();
         to_date.add_hours(-6);
 
         self.app
             .logs_repo
             .gc_level(to_date, crate::repo::dto::LogLevelDto::Warning)
+            .await;
+
+        let now = DateTimeAsMicroseconds::now();
+        let mut debug_cutoff = now;
+        debug_cutoff.add_minutes(-60);
+        self.app
+            .sqlite_logs_repo
+            .gc(crate::repo::dto::LogLevelDto::Debug, debug_cutoff)
+            .await;
+
+        let mut info_cutoff = now;
+        info_cutoff.add_hours(-2);
+        self.app
+            .sqlite_logs_repo
+            .gc(crate::repo::dto::LogLevelDto::Info, info_cutoff)
             .await;
 
         gc_files(&self.app).await;

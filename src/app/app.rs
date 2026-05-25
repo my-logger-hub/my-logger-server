@@ -9,7 +9,7 @@ use crate::{
     hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
     insights_repo::InsightsRepo,
-    repo::{LogsRepo, SettingsRepo},
+    repo::{LogsRepo, SettingsRepo, SqliteLogsRepo},
     telegram::TelegramNotificationData,
 };
 
@@ -27,6 +27,8 @@ pub struct AppContext {
     pub app_states: Arc<AppStates>,
     pub logs_repo: LogsRepo,
     pub logs_queue: LogsQueue,
+    pub sqlite_logs_repo: SqliteLogsRepo,
+    pub sqlite_logs_queue: LogsQueue,
     pub settings_repo: SettingsRepo,
     pub filter_events_cache: FilterEventsCache,
     pub elastic: Option<ElasticInner>,
@@ -80,8 +82,10 @@ impl AppContext {
         Self {
             env_name,
             app_states: Arc::new(AppStates::create_initialized()),
-            logs_repo: LogsRepo::new(logs_db_path).await,
+            logs_repo: LogsRepo::new(logs_db_path.clone()).await,
             logs_queue: LogsQueue::new(),
+            sqlite_logs_repo: SqliteLogsRepo::new(logs_db_path),
+            sqlite_logs_queue: LogsQueue::new(),
             settings_repo: SettingsRepo::new(settings_db_path).await,
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),

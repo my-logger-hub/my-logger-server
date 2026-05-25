@@ -9,10 +9,5 @@ pub async fn search_and_scan(
     phrase: &str,
     limit: usize,
 ) -> Vec<LogItemDto> {
-    let response = app
-        .logs_repo
-        .scan(from_date, to_date, phrase, limit, app.is_debug)
-        .await;
-
-    response
+    super::search_logs(app, from_date, to_date, None, None, Some(phrase), limit).await
 }

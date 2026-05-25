@@ -53,7 +53,7 @@ impl MyLogger for GrpcService {
 
         let response = match range {
             RequestType::HourKey(date_key) => {
-                let levels = if levels.len() > 0 {
+                let log_levels = if levels.len() > 0 {
                     Some(levels.into_iter().map(|level| level.into()).collect())
                 } else {
                     None
@@ -69,10 +69,16 @@ impl MyLogger for GrpcService {
                     None
                 };
 
-                self.app
-                    .logs_repo
-                    .get_from_certain_hour(date_key, levels, context, request.take as usize)
-                    .await
+                crate::flows::search_logs(
+                    &self.app,
+                    date_key.hour_start(),
+                    date_key.hour_end(),
+                    log_levels,
+                    context,
+                    None,
+                    request.take as usize,
+                )
+                .await
             }
             RequestType::DateRange(from_date, to_date) => {
                 crate::flows::get_events(
@@ -104,7 +110,10 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let response = self.app.logs_repo.get_statistics().await;
+        let (tantivy_stats, sqlite_stats) = tokio::join!(
+            self.app.logs_repo.get_statistics(),
+            self.app.sqlite_logs_repo.get_statistics(),
+        );
 
         let mut result = StatisticData {
             info_count: 0,
@@ -114,17 +123,17 @@ impl MyLogger for GrpcService {
             debug_count: 0,
         };
 
-        for itm in response {
+        for itm in tantivy_stats.into_iter().chain(sqlite_stats.into_iter()) {
             match itm.level {
-                crate::repo::dto::LogLevelDto::Info => result.info_count = itm.count as i32,
+                crate::repo::dto::LogLevelDto::Info => result.info_count += itm.count as i32,
                 crate::repo::dto::LogLevelDto::Warning => {
-                    result.warning_count = itm.count as i32
+                    result.warning_count += itm.count as i32
                 }
-                crate::repo::dto::LogLevelDto::Error => result.error_count = itm.count as i32,
+                crate::repo::dto::LogLevelDto::Error => result.error_count += itm.count as i32,
                 crate::repo::dto::LogLevelDto::FatalError => {
-                    result.fatal_count = itm.count as i32
+                    result.fatal_count += itm.count as i32
                 }
-                crate::repo::dto::LogLevelDto::Debug => result.debug_count = itm.count as i32,
+                crate::repo::dto::LogLevelDto::Debug => result.debug_count += itm.count as i32,
             }
         }
 
@@ -150,10 +159,16 @@ impl MyLogger for GrpcService {
 
         let response = match range {
             RequestType::HourKey(date_hour_key) => {
-                self.app
-                    .logs_repo
-                    .scan_from_exact_hour(date_hour_key, &request.phrase, request.take as usize)
-                    .await
+                crate::flows::search_logs(
+                    &self.app,
+                    date_hour_key.hour_start(),
+                    date_hour_key.hour_end(),
+                    None,
+                    None,
+                    Some(request.phrase.as_str()),
+                    request.take as usize,
+                )
+                .await
             }
             RequestType::DateRange(from_date, to_date) => {
                 crate::flows::search_and_scan(

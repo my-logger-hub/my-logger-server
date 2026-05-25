@@ -191,6 +191,8 @@ impl LogsRepo {
         if path.chars().last().unwrap() != std::path::MAIN_SEPARATOR {
             path.push(std::path::MAIN_SEPARATOR);
         }
+        path.push_str("main");
+        path.push(std::path::MAIN_SEPARATOR);
         let _ = tokio::fs::create_dir_all(&path).await;
         Self {
             pool: Mutex::new(LogsRepoPool::default()),
@@ -305,109 +307,6 @@ impl LogsRepo {
         .unwrap();
     }
 
-    pub async fn get_from_certain_hour(
-        &self,
-        date_key: DateHourKey,
-        levels: Option<Vec<LogLevelDto>>,
-        context: Option<BTreeMap<String, String>>,
-        take: usize,
-    ) -> Vec<LogItemDto> {
-        let hour = match self.get_hour(date_key).await {
-            Some(h) => h,
-            None => return Vec::new(),
-        };
-        search_hour(&hour, None, None, levels.as_deref(), context.as_ref(), None, take)
-            .await
-            .unwrap_or_default()
-    }
-
-    pub async fn get(
-        &self,
-        from_date: DateTimeAsMicroseconds,
-        to_date: Option<DateTimeAsMicroseconds>,
-        levels: Option<Vec<LogLevelDto>>,
-        context: Option<BTreeMap<String, String>>,
-        take: usize,
-    ) -> Vec<LogItemDto> {
-        let to_date = to_date.unwrap_or_else(DateTimeAsMicroseconds::now);
-        let keys = DateHourKey::get_keys_to_request(from_date, to_date);
-
-        println!("Files to request: {:?}", keys.keys().collect::<Vec<_>>());
-
-        let mut result: Vec<LogItemDto> = Vec::new();
-        for date_key in keys.keys().rev() {
-            let hour = match self.get_hour(*date_key).await {
-                Some(h) => h,
-                None => continue,
-            };
-            match search_hour(
-                &hour,
-                Some(from_date.unix_microseconds),
-                Some(to_date.unix_microseconds),
-                levels.as_deref(),
-                context.as_ref(),
-                None,
-                take,
-            )
-            .await
-            {
-                Ok(items) => result.extend(items),
-                Err(e) => println!("Error: {:?}", e),
-            }
-            if result.len() >= take {
-                break;
-            }
-        }
-        result.truncate(take);
-        result
-    }
-
-    pub async fn scan(
-        &self,
-        from_date: DateTimeAsMicroseconds,
-        to_date: DateTimeAsMicroseconds,
-        phrase: &str,
-        limit: usize,
-        debug: bool,
-    ) -> Vec<LogItemDto> {
-        let keys = DateHourKey::get_keys_to_request(from_date, to_date);
-
-        let mut result: Vec<LogItemDto> = Vec::new();
-        for date_key in keys.keys().rev() {
-            if debug {
-                println!(
-                    "Requesting search from index:'{}'. From: {}, to: {}",
-                    date_key.get_value(),
-                    from_date.to_rfc3339(),
-                    to_date.to_rfc3339()
-                );
-            }
-            let hour = match self.get_hour(*date_key).await {
-                Some(h) => h,
-                None => continue,
-            };
-            match search_hour(
-                &hour,
-                Some(from_date.unix_microseconds),
-                Some(to_date.unix_microseconds),
-                None,
-                None,
-                Some(phrase),
-                limit,
-            )
-            .await
-            {
-                Ok(items) => result.extend(items),
-                Err(e) => println!("Error: {:?}", e),
-            }
-            if result.len() >= limit {
-                break;
-            }
-        }
-        result.truncate(limit);
-        result
-    }
-
     pub async fn search(
         &self,
         from_date: DateTimeAsMicroseconds,
@@ -444,25 +343,6 @@ impl LogsRepo {
         }
         result.truncate(limit);
         result
-    }
-
-    pub async fn scan_from_exact_hour(
-        &self,
-        hour_key: DateHourKey,
-        phrase: &str,
-        limit: usize,
-    ) -> Vec<LogItemDto> {
-        let hour = match self.get_hour(hour_key).await {
-            Some(h) => h,
-            None => {
-                println!("No tantivy index for hour: {}", hour_key.get_value());
-                return Vec::new();
-            }
-        };
-        println!("Doing scan from exact hour: {}", hour_key.get_value());
-        search_hour(&hour, None, None, None, None, Some(phrase), limit)
-            .await
-            .unwrap_or_default()
     }
 
     pub async fn prepare_to_delete(&self, date_key: DateHourKey) {

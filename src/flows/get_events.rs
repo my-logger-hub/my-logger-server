@@ -28,10 +28,7 @@ pub async fn get_events(
         None
     };
 
-    let response = app
-        .logs_repo
-        .get(from_date, to_date, log_levels, context, take)
-        .await;
+    let to_date = to_date.unwrap_or_else(DateTimeAsMicroseconds::now);
 
-    response
+    super::search_logs(app, from_date, to_date, log_levels, context, None, take).await
 }

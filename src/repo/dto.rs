@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::LogItem;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum LogLevelDto {
     Info,
     Warning,
