@@ -13,7 +13,7 @@ use crate::{
     telegram::TelegramNotificationData,
 };
 
-use super::LogsQueue;
+use super::{DebugConsole, LogsQueue};
 
 pub const PROCESS_CONTEXT_KEY: &'static str = "Process";
 
@@ -46,6 +46,8 @@ pub struct AppContext {
     pub env_name: String,
 
     pub ui_url: Mutex<String>,
+
+    pub debug_console: Arc<DebugConsole>,
 }
 
 pub const APP_VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -79,13 +81,15 @@ impl AppContext {
 
         let insights_repo = InsightsRepo::new(insight_keys, 1024);
 
+        let debug_console = Arc::new(DebugConsole::new());
+
         Self {
             env_name,
             app_states: Arc::new(AppStates::create_initialized()),
             logs_repo: LogsRepo::new(logs_db_path.clone()).await,
-            logs_queue: LogsQueue::new(),
+            logs_queue: LogsQueue::new("tantivy", debug_console.clone()),
             sqlite_logs_repo: SqliteLogsRepo::new(logs_db_path),
-            sqlite_logs_queue: LogsQueue::new(),
+            sqlite_logs_queue: LogsQueue::new("sqlite", debug_console.clone()),
             settings_repo: SettingsRepo::new(settings_db_path).await,
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
@@ -95,7 +99,7 @@ impl AppContext {
                 .get_elastic_settings()
                 .await
                 .map(|x| ElasticInner {
-                    logs_queue: LogsQueue::new(),
+                    logs_queue: LogsQueue::new("elastic", debug_console.clone()),
                     client: ElasticClient::new(ElasticClientAuth::SingleNode {
                         url: x.url,
                         esecure: Some(x.esecure),
@@ -107,6 +111,7 @@ impl AppContext {
             insights_repo,
             telegram_notification_data: Mutex::new(TelegramNotificationData::new()),
             ui_url: Mutex::new(String::new()),
+            debug_console,
         }
     }
 

@@ -20,6 +20,10 @@ impl GcTimer {
 #[async_trait::async_trait]
 impl MyTimerTick for GcTimer {
     async fn tick(&self) {
+        if let Some(stats) = crate::app::read_jemalloc_stats() {
+            self.app.debug_console.push(stats.to_debug_string()).await;
+        }
+
         {
             let mut hourly_statistics = self.app.hourly_statistics.lock().await;
             hourly_statistics.gc();
@@ -29,6 +33,8 @@ impl MyTimerTick for GcTimer {
         to_date.add_days(-1);
 
         self.app.logs_repo.gc(to_date).await;
+
+        self.app.logs_repo.close_idle_writers().await;
 
         let mut to_date = DateTimeAsMicroseconds::now();
         to_date.add_hours(-6);
@@ -66,14 +72,18 @@ impl MyTimerTick for GcTimer {
 async fn gc_files(app: &AppContext) {
     let files = app.logs_repo.get_files().await;
 
-    println!("Files: {:#?}", files);
-
     let gc_from = app.settings_reader.get_duration_to_gc().await;
 
     let gc_date_key = DateTimeAsMicroseconds::now().sub(gc_from);
     let gc_date_key: DateHourKey = gc_date_key.into();
 
-    println!("GC from date_key: {}", gc_date_key.get_value());
+    app.debug_console
+        .push(format!(
+            "GC from date_key: {}. Files: {:?}",
+            gc_date_key.get_value(),
+            files
+        ))
+        .await;
 
     let mut to_gc = Vec::new();
     for file_name in files {

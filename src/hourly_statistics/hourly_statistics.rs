@@ -96,6 +96,10 @@ impl HourlyStatistics {
         result
     }
 
+    pub fn hours_count(&self) -> usize {
+        self.data.len()
+    }
+
     pub fn gc(&mut self) {
         while self.data.len() > MAX_HOURS_TO_KEEP {
             let key = self.data.keys().next().unwrap().clone();

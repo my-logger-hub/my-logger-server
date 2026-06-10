@@ -37,7 +37,7 @@ elastic-client = { git = "https://github.com/MyJetTools/elastic-client", tag = "
 #] }
 
 tantivy = "0.26"
-turso = "0.6"
+turso = { version = "0.6", default-features = false, features = ["fts"] }
 
 mcp-server-middleware = { tag = "0.8.3", git = "https://github.com/my-ai-utils/mcp-server-middleware.git" }
 my-ai-agent = { tag = "0.1.0", git = "https://github.com/my-ai-utils/my-ai-agent.git", features = [
@@ -64,6 +64,11 @@ uuid = { version = "*", features = ["v4"] }
 futures-core = "*"
 reqwest = "*"
 itoa = "1"
+tikv-jemallocator = { version = "*", features = [
+    "unprefixed_malloc_on_supported_platforms",
+    "stats",
+] }
+tikv-jemalloc-ctl = { version = "*", features = ["stats"] }
 
 
 [build-dependencies]

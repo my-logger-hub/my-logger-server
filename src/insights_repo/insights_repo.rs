@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use tokio::sync::Mutex;
 
+// High-cardinality ctx keys (trace ids etc.) would otherwise grow the value list forever.
+const MAX_VALUES_PER_KEY: usize = 10_000;
+
 pub struct InsightsRepo {
     data: Mutex<HashMap<String, Vec<String>>>,
     max_value_size: usize,
@@ -26,6 +29,13 @@ impl InsightsRepo {
         data.keys().cloned().collect()
     }
 
+    pub async fn get_value_counts(&self) -> BTreeMap<String, usize> {
+        let data = self.data.lock().await;
+        data.iter()
+            .map(|(key, values)| (key.clone(), values.len()))
+            .collect()
+    }
+
     pub async fn try_insert_values(&self, key_value: &BTreeMap<String, String>) {
         let mut data = self.data.lock().await;
 
@@ -34,6 +44,9 @@ impl InsightsRepo {
                 continue;
             }
             if let Some(values) = data.get_mut(key) {
+                if values.len() >= MAX_VALUES_PER_KEY {
+                    continue;
+                }
                 if values.contains(value) {
                     continue;
                 }

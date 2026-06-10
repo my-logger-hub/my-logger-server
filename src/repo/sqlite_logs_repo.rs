@@ -106,6 +106,15 @@ pub struct SqliteLogsRepo {
 }
 
 impl SqliteLogsRepo {
+    pub async fn get_open_db_keys(&self) -> Vec<String> {
+        let access = self.pool.lock().await;
+        access
+            .pool
+            .keys()
+            .map(|(level, date_key)| format!("{:?}:{}", level, date_key.get_value()))
+            .collect()
+    }
+
     pub fn new(mut path: String) -> Self {
         if path.chars().last().map(|c| c != std::path::MAIN_SEPARATOR).unwrap_or(true) {
             path.push(std::path::MAIN_SEPARATOR);

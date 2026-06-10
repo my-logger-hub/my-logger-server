@@ -46,26 +46,57 @@ impl LogItem {
     }
 }
 
+// Backstop for when the flusher falls behind the ingest rate: oldest items are
+// dropped so the queue can not grow until OOM.
+const MAX_QUEUE_SIZE: usize = 100_000;
+
 pub struct LogsQueue {
     pub queue: tokio::sync::Mutex<Option<VecDeque<Arc<LogItem>>>>,
+    name: &'static str,
+    debug_console: Arc<super::DebugConsole>,
 }
 
 impl LogsQueue {
-    pub fn new() -> Self {
+    pub fn new(name: &'static str, debug_console: Arc<super::DebugConsole>) -> Self {
         Self {
             queue: tokio::sync::Mutex::new(None),
+            name,
+            debug_console,
         }
     }
 
     pub async fn add(&self, items: Vec<Arc<LogItem>>) {
-        //println!("Added events: {}", items.len());
+        let overflow = {
+            let mut write_access = self.queue.lock().await;
+            if write_access.is_none() {
+                *write_access = Some(VecDeque::new());
+            }
 
-        let mut write_access = self.queue.lock().await;
-        if write_access.is_none() {
-            *write_access = Some(VecDeque::new());
+            let queue = write_access.as_mut().unwrap();
+            queue.extend(items);
+
+            if queue.len() > MAX_QUEUE_SIZE {
+                let overflow = queue.len() - MAX_QUEUE_SIZE;
+                queue.drain(..overflow);
+                overflow
+            } else {
+                0
+            }
+        };
+
+        if overflow > 0 {
+            self.debug_console
+                .push(format!(
+                    "{} queue overflow: dropped {} oldest items",
+                    self.name, overflow
+                ))
+                .await;
         }
+    }
 
-        write_access.as_mut().unwrap().extend(items);
+    pub async fn len(&self) -> usize {
+        let read_access = self.queue.lock().await;
+        read_access.as_ref().map(|queue| queue.len()).unwrap_or(0)
     }
 
     pub async fn get(&self, max_items_to_dequeue: usize) -> Option<VecDeque<Arc<LogItem>>> {

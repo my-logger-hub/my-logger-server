@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, ops::Bound, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Bound,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 use tantivy::{
@@ -18,7 +23,7 @@ use crate::app::PROCESS_CONTEXT_KEY;
 use super::{dto::*, DateHourKey};
 
 pub const LOG_FILE_PREFIX: &str = "logs-";
-const WRITER_HEAP: usize = 50_000_000;
+const WRITER_HEAP: usize = 15_000_000;
 
 const F_TIMESTAMP: &str = "timestamp";
 const F_ID: &str = "id";
@@ -121,7 +126,7 @@ struct HourIndex {
     index: Index,
     fields: SchemaFields,
     reader: IndexReader,
-    write_lock: Mutex<()>,
+    writer: Mutex<Option<IndexWriter<TantivyDocument>>>,
 }
 
 impl HourIndex {
@@ -146,7 +151,7 @@ impl HourIndex {
             index,
             fields,
             reader,
-            write_lock: Mutex::new(()),
+            writer: Mutex::new(None),
         })
     }
 
@@ -170,8 +175,56 @@ impl HourIndex {
             index,
             fields,
             reader,
-            write_lock: Mutex::new(()),
+            writer: Mutex::new(None),
         }))
+    }
+
+    async fn with_writer<F>(&self, op: F)
+    where
+        F: FnOnce(&mut IndexWriter<TantivyDocument>) -> tantivy::Result<()> + Send + 'static,
+    {
+        let mut guard = self.writer.lock().await;
+        let writer = guard.take();
+        let index = self.index.clone();
+        let result = tokio::task::spawn_blocking(
+            move || -> tantivy::Result<IndexWriter<TantivyDocument>> {
+                let mut writer = match writer {
+                    Some(writer) => writer,
+                    None => index.writer_with_num_threads(1, WRITER_HEAP)?,
+                };
+                op(&mut writer)?;
+                writer.commit()?;
+                Ok(writer)
+            },
+        )
+        .await
+        .unwrap();
+
+        match result {
+            Ok(writer) => *guard = Some(writer),
+            Err(err) => println!("tantivy write failed: {:?}", err),
+        }
+    }
+
+    async fn close_writer(&self) {
+        let writer = self.writer.lock().await.take();
+        if let Some(writer) = writer {
+            let _ = tokio::task::spawn_blocking(move || writer.wait_merging_threads()).await;
+        }
+    }
+
+    async fn count_level(&self, level: &LogLevelDto) -> usize {
+        let reader = self.reader.clone();
+        let term = Term::from_field_text(self.fields.level, level_term(level));
+        tokio::task::spawn_blocking(move || {
+            let searcher = reader.searcher();
+            let query = TermQuery::new(term, IndexRecordOption::Basic);
+            searcher
+                .search(&query, &tantivy::collector::Count)
+                .unwrap_or(0)
+        })
+        .await
+        .unwrap_or(0)
     }
 }
 
@@ -183,6 +236,7 @@ struct LogsRepoPool {
 
 pub struct LogsRepo {
     pool: Mutex<LogsRepoPool>,
+    purged_levels: Mutex<BTreeSet<(LogLevelDto, DateHourKey)>>,
     path: String,
 }
 
@@ -196,6 +250,7 @@ impl LogsRepo {
         let _ = tokio::fs::create_dir_all(&path).await;
         Self {
             pool: Mutex::new(LogsRepoPool::default()),
+            purged_levels: Mutex::new(BTreeSet::new()),
             path,
         }
     }
@@ -250,20 +305,18 @@ impl LogsRepo {
         self.get_hour(date_key).await
     }
 
-    async fn get_last_and_before(&self) -> Vec<Arc<HourIndex>> {
-        let now = DateTimeAsMicroseconds::now();
-        let date_key_now: DateHourKey = now.into();
-        let before = now.sub(std::time::Duration::from_secs(60 * 60));
-        let date_key_before: DateHourKey = before.into();
+    async fn get_pooled(&self, date_key: DateHourKey) -> Option<Arc<HourIndex>> {
+        let access = self.pool.lock().await;
+        access.pool.get(&date_key).cloned()
+    }
 
-        let mut result = Vec::with_capacity(2);
-        if let Some(idx) = self.get_hour(date_key_now).await {
-            result.push(idx);
-        }
-        if let Some(idx) = self.get_hour(date_key_before).await {
-            result.push(idx);
-        }
-        result
+    async fn open_transient(&self, date_key: DateHourKey) -> Option<Arc<HourIndex>> {
+        let path = PathBuf::from(self.compile_file_name(date_key));
+        let idx = tokio::task::spawn_blocking(move || HourIndex::open_existing(path))
+            .await
+            .ok()?
+            .ok()??;
+        Some(Arc::new(idx))
     }
 
     pub async fn upload(&self, date_key: DateHourKey, items: &[LogItemDto]) {
@@ -271,13 +324,10 @@ impl LogsRepo {
             return;
         }
         let hour = self.get_or_create(date_key).await;
-        let _guard = hour.write_lock.lock().await;
-        let index = hour.index.clone();
         let fields = hour.fields.clone();
         let items_owned: Vec<LogItemDto> = items.to_vec();
 
-        tokio::task::spawn_blocking(move || -> tantivy::Result<()> {
-            let mut writer: IndexWriter<TantivyDocument> = index.writer(WRITER_HEAP)?;
+        hour.with_writer(move |writer| {
             for item in items_owned {
                 let mut doc = TantivyDocument::default();
                 doc.add_i64(fields.timestamp, item.moment.unix_microseconds);
@@ -299,12 +349,9 @@ impl LogsRepo {
                 doc.add_text(fields.text_search, buf);
                 writer.add_document(doc)?;
             }
-            writer.commit()?;
             Ok(())
         })
-        .await
-        .unwrap()
-        .unwrap();
+        .await;
     }
 
     pub async fn search(
@@ -420,32 +467,105 @@ impl LogsRepo {
     }
 
     pub async fn gc_level(&self, to_date: DateTimeAsMicroseconds, level: LogLevelDto) {
-        let last_and_before = self.get_last_and_before().await;
-        for hour in last_and_before {
-            let _guard = hour.write_lock.lock().await;
-            let index = hour.index.clone();
-            let fields = hour.fields.clone();
-            let level = level.clone();
-            let to_micros = to_date.unix_microseconds;
-            let _ = tokio::task::spawn_blocking(move || -> tantivy::Result<()> {
-                let mut writer: IndexWriter<TantivyDocument> = index.writer(WRITER_HEAP)?;
-                let range = RangeQuery::new(
-                    Bound::Unbounded,
-                    Bound::Included(Term::from_field_i64(fields.timestamp, to_micros)),
-                );
-                let level_q = TermQuery::new(
-                    Term::from_field_text(fields.level, level_term(&level)),
-                    IndexRecordOption::Basic,
-                );
-                let q = BooleanQuery::new(vec![
-                    (Occur::Must, Box::new(range) as Box<dyn Query>),
-                    (Occur::Must, Box::new(level_q) as Box<dyn Query>),
-                ]);
-                writer.delete_query(Box::new(q))?;
-                writer.commit()?;
-                Ok(())
-            })
-            .await;
+        let cutoff = DateHourKey::new(to_date);
+
+        let mut disk_keys = Vec::new();
+        for file_name in self.get_files().await {
+            if !file_name.starts_with(LOG_FILE_PREFIX) {
+                continue;
+            }
+            if let Some(key) = DateHourKey::parse_from_str(&file_name[LOG_FILE_PREFIX.len()..]) {
+                disk_keys.push(key);
+            }
+        }
+
+        for date_key in disk_keys.iter().copied() {
+            if date_key >= cutoff {
+                continue;
+            }
+            {
+                let purged = self.purged_levels.lock().await;
+                if purged.contains(&(level.clone(), date_key)) {
+                    continue;
+                }
+            }
+
+            let hour = match self.get_pooled(date_key).await {
+                Some(hour) => Some(hour),
+                None => self.open_transient(date_key).await,
+            };
+
+            if let Some(hour) = hour {
+                if hour.count_level(&level).await > 0 {
+                    let field = hour.fields.level;
+                    let level_to_delete = level.clone();
+                    hour.with_writer(move |writer| {
+                        let term =
+                            Term::from_field_text(field, level_term(&level_to_delete));
+                        writer.delete_term(term);
+                        Ok(())
+                    })
+                    .await;
+                }
+                hour.close_writer().await;
+            }
+
+            self.purged_levels
+                .lock()
+                .await
+                .insert((level.clone(), date_key));
+        }
+
+        let disk_keys: BTreeSet<DateHourKey> = disk_keys.into_iter().collect();
+        self.purged_levels
+            .lock()
+            .await
+            .retain(|(_, date_key)| disk_keys.contains(date_key));
+    }
+
+    pub async fn get_open_indexes(&self) -> (Vec<i64>, usize) {
+        let hours: Vec<(i64, Arc<HourIndex>)> = {
+            let access = self.pool.lock().await;
+            access
+                .pool
+                .iter()
+                .map(|(date_key, hour)| (date_key.get_value(), hour.clone()))
+                .collect()
+        };
+
+        let mut open_writers = 0;
+        let mut keys = Vec::with_capacity(hours.len());
+        for (date_key, hour) in hours {
+            keys.push(date_key);
+            // try_lock failure means an upload holds the writer right now
+            let has_writer = match hour.writer.try_lock() {
+                Ok(guard) => guard.is_some(),
+                Err(_) => true,
+            };
+            if has_writer {
+                open_writers += 1;
+            }
+        }
+        (keys, open_writers)
+    }
+
+    pub async fn close_idle_writers(&self) {
+        let keep_from: DateHourKey = DateTimeAsMicroseconds::now()
+            .sub(std::time::Duration::from_secs(60 * 60))
+            .into();
+
+        let to_close: Vec<Arc<HourIndex>> = {
+            let access = self.pool.lock().await;
+            access
+                .pool
+                .iter()
+                .filter(|(date_key, _)| **date_key < keep_from)
+                .map(|(_, hour)| hour.clone())
+                .collect()
+        };
+
+        for hour in to_close {
+            hour.close_writer().await;
         }
     }
 }
