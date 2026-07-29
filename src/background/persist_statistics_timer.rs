@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rust_extensions::MyTimerTick;
+use rust_extensions::{MyTimerTick, RepeatTimerIteration};
 
 use crate::app::AppContext;
 
@@ -16,7 +16,7 @@ impl PersistStatisticsTimer {
 
 #[async_trait::async_trait]
 impl MyTimerTick for PersistStatisticsTimer {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         let snapshot = {
             let read_access = self.app.hourly_statistics.lock().await;
             read_access.snapshot()
@@ -26,7 +26,7 @@ impl MyTimerTick for PersistStatisticsTimer {
             Ok(b) => b,
             Err(e) => {
                 println!("Failed to serialize statistics: {}", e);
-                return;
+                return RepeatTimerIteration::WithInterval;
             }
         };
 
@@ -36,5 +36,7 @@ impl MyTimerTick for PersistStatisticsTimer {
                 self.app.statistics_path, e
             );
         }
+
+        RepeatTimerIteration::WithInterval
     }
 }

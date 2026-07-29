@@ -1,10 +1,16 @@
+// The `TryFrom<HttpInputValue>` impl `MyHttpStringEnum` emits spells its error type `Self::Error`,
+// which collides with our `Error` case. In type position it still resolves to the associated type,
+// so the lint is the only fallout.
+#![allow(ambiguous_associated_items)]
+
 use my_http_server::macros::MyHttpStringEnum;
 use my_logger::LogLevel;
-use serde::Deserialize;
 
 use crate::repo::dto::LogLevelDto;
 
-#[derive(MyHttpStringEnum, Deserialize, Debug)]
+// `MyHttpStringEnum` now emits `Serialize`/`Deserialize` itself, over the `http_enum_case` value,
+// so deriving serde here again would both conflict and key off the variant name instead.
+#[derive(MyHttpStringEnum, Debug)]
 pub enum LogLevelHttpModel {
     #[http_enum_case(id:0, description = "Info level")]
     Info,

@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-use my_http_server::{macros::*, types::RawDataTyped, HttpFailResult};
+use my_http_server::{macros::*, HttpFailResult, RawDataTyped};
 use rust_extensions::{date_time::DateTimeAsMicroseconds, SortableId};
 use serde::Deserialize;
 
@@ -37,7 +37,7 @@ impl PostJsonLogsV2InputData {
                 message: itm.message,
                 timestamp,
                 ctx: if let Some(ctx) = itm.context {
-                    ctx
+                    ctx.into_iter().collect()
                 } else {
                     BTreeMap::new()
                 },
@@ -54,5 +54,7 @@ pub struct JsonHttpLogItem {
     pub level: LogLevelHttpModel,
     pub process: Option<String>,
     pub message: String,
-    pub context: Option<BTreeMap<String, String>>,
+    // `MyHttpInputObjectStructure` reads maps through my-json's `HashMap<String, V>` impl;
+    // there is no `BTreeMap` one.
+    pub context: Option<HashMap<String, String>>,
 }

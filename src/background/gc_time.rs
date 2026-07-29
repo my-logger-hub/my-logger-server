@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rust_extensions::{date_time::DateTimeAsMicroseconds, MyTimerTick};
+use rust_extensions::{date_time::DateTimeAsMicroseconds, MyTimerTick, RepeatTimerIteration};
 
 use crate::{
     app::AppContext,
@@ -19,7 +19,7 @@ impl GcTimer {
 
 #[async_trait::async_trait]
 impl MyTimerTick for GcTimer {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         if let Some(stats) = crate::app::read_jemalloc_stats() {
             self.app.debug_console.push(stats.to_debug_string()).await;
         }
@@ -66,6 +66,8 @@ impl MyTimerTick for GcTimer {
         if self.app.settings_repo.gc_expired().await {
             self.app.filter_events_cache.reset().await;
         }
+
+        RepeatTimerIteration::WithInterval
     }
 }
 

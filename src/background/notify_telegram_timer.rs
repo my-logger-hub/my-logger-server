@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rust_extensions::{date_time::DateTimeAsMicroseconds, MyTimerTick};
+use rust_extensions::{date_time::DateTimeAsMicroseconds, MyTimerTick, RepeatTimerIteration};
 
 use crate::app::AppContext;
 
@@ -16,7 +16,7 @@ impl NotifyTelegramTimer {
 
 #[async_trait::async_trait]
 impl MyTimerTick for NotifyTelegramTimer {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         let now = DateTimeAsMicroseconds::now();
         let to_telegram = {
             let mut data_access = self.app.telegram_notification_data.lock().await;
@@ -24,7 +24,7 @@ impl MyTimerTick for NotifyTelegramTimer {
         };
 
         if to_telegram.is_none() {
-            return;
+            return RepeatTimerIteration::WithInterval;
         }
 
         let to_telegram = to_telegram.unwrap();
@@ -33,7 +33,7 @@ impl MyTimerTick for NotifyTelegramTimer {
 
         if telegram_settings.is_none() {
             println!("Telegram is disabled");
-            return;
+            return RepeatTimerIteration::WithInterval;
         }
 
         let telegram_settings = telegram_settings.unwrap();
@@ -47,5 +47,7 @@ impl MyTimerTick for NotifyTelegramTimer {
             ui_url,
         )
         .await;
+
+        RepeatTimerIteration::WithInterval
     }
 }

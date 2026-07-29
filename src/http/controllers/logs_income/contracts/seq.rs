@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use my_http_server::{macros::MyHttpInput, types::RawData};
+use my_http_server::{macros::MyHttpInput, RawData};
 use my_json::json_reader::JsonFirstLineIterator;
 use my_logger::LogLevel;
 use rust_extensions::{date_time::DateTimeAsMicroseconds, lazy::LazyVec, SortableId};
@@ -124,7 +124,7 @@ impl LogItem {
 
 #[cfg(test)]
 mod tests {
-    use my_http_server::types::RawData;
+    use my_http_server::RawData;
 
     use crate::{app::LogItem, http::controllers::logs_income::contracts::SeqInputHttpData};
 

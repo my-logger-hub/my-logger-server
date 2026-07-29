@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use rust_extensions::MyTimerTick;
+use rust_extensions::{MyTimerTick, RepeatTimerIteration};
 
 use crate::{
     app::{AppContext, LogItem, PROCESS_CONTEXT_KEY},
@@ -50,7 +50,7 @@ impl FlushToDbTimer {
 
 #[async_trait::async_trait]
 impl MyTimerTick for FlushToDbTimer {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         while let Some(items) = self.app.logs_queue.get(1000).await {
             self.send_to_telegram_if_needed(&items).await;
 
@@ -73,6 +73,8 @@ impl MyTimerTick for FlushToDbTimer {
                 self.app.logs_repo.upload(date_key, items.as_slice()).await;
             }
         }
+
+        RepeatTimerIteration::WithInterval
     }
 }
 

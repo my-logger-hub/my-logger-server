@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use rust_extensions::MyTimerTick;
+use rust_extensions::{MyTimerTick, RepeatTimerIteration};
 
 use crate::{
     app::{AppContext, PROCESS_CONTEXT_KEY},
@@ -19,7 +19,7 @@ impl FlushToSqliteTimer {
 
 #[async_trait::async_trait]
 impl MyTimerTick for FlushToSqliteTimer {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         while let Some(items) = self.app.sqlite_logs_queue.get(1000).await {
             let mut to_upload: BTreeMap<(LogLevelDto, DateHourKey), Vec<LogItemDto>> =
                 BTreeMap::new();
@@ -53,5 +53,7 @@ impl MyTimerTick for FlushToSqliteTimer {
                     .await;
             }
         }
+
+        RepeatTimerIteration::WithInterval
     }
 }

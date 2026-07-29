@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use elastic_client::{ElasticClient, ElasticIndexRotationPattern};
-use rust_extensions::MyTimerTick;
+use rust_extensions::{MyTimerTick, RepeatTimerIteration};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -103,13 +103,13 @@ const AUTO_PANIC_HANDLER: &str = "Panic Handler";
 
 #[async_trait::async_trait]
 impl MyTimerTick for FlushToElastic {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         let Some(elastic) = self.app.elastic.as_ref() else {
             if self.app.is_debug {
                 println!("Elastic client is not initialized");
             }
 
-            return;
+            return RepeatTimerIteration::WithInterval;
         };
 
         while let Some(items) = elastic.logs_queue.get(1000).await {
@@ -152,6 +152,8 @@ impl MyTimerTick for FlushToElastic {
 
             println!("elastic_status: {}", response.status_code(),);
         }
+
+        RepeatTimerIteration::WithInterval
     }
 }
 

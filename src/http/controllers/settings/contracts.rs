@@ -35,6 +35,7 @@ pub struct IgnoreEventHttpModel {
     pub level: String,
     pub application: String,
     pub marker: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // `MyHttpObjectStructure` rejects wire-shaping serde params, so a rule without an expiration
+    // is now written as `"expiration": null` instead of being omitted.
     pub expiration: Option<i64>,
 }
