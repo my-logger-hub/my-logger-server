@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use my_ai_agent::{macros::ApplyJsonSchema, ToolDefinition};
+use mcp_server_middleware::{ApplyJsonSchema, ToolDefinition};
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 use serde::{Deserialize, Serialize};
 

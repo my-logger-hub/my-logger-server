@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use my_ai_agent::{macros::ApplyJsonSchema, ToolDefinition};
+use mcp_server_middleware::{ApplyJsonSchema, ToolDefinition};
 use serde::{Deserialize, Serialize};
 
 use mcp_server_middleware::McpToolCall;

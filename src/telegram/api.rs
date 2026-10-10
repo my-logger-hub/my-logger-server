@@ -131,7 +131,10 @@ async fn log_telegram_response(
         Ok(mut response) => {
             let status = response.get_status_code();
             if !(200..300).contains(&status) {
-                let body = response.get_body_as_slice().await;
+                let body = match response.get_body() {
+                    Ok(body) => body.into_vec(64 * 1024).await,
+                    Err(err) => Err(err),
+                };
                 let body_str = body
                     .as_ref()
                     .ok()

@@ -43,9 +43,6 @@ tantivy = "0.26"
 turso = { version = "0.6", default-features = false, features = ["fts"] }
 
 mcp-server-middleware = { tag = "0.9.0", git = "https://github.com/my-ai-utils/mcp-server-middleware.git" }
-my-ai-agent = { tag = "0.1.0", git = "https://github.com/my-ai-utils/my-ai-agent.git", features = [
-    "agent",
-] }
 
 async-trait = "*"
 syn = "2"

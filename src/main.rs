@@ -43,7 +43,7 @@ async fn main() {
     crate::http::start_up::setup_server(app.clone()).await;
 
     if let Some(elastic_settings) = elastic_settings {
-        let mut elastic_timer = MyTimer::new(Duration::from_millis(500));
+        let mut elastic_timer = MyTimer::new(Duration::from_millis(500), my_logger::LOGGER.clone());
         elastic_timer.register_timer(
             "ToElasticFlusher",
             Arc::new(FlushToElastic::new(
@@ -51,30 +51,30 @@ async fn main() {
                 &elastic_settings.env_source,
             )),
         );
-        elastic_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+        elastic_timer.start();
     }
-    let mut my_timer = MyTimer::new(Duration::from_millis(500));
+    let mut my_timer = MyTimer::new(Duration::from_millis(500), my_logger::LOGGER.clone());
     my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
     my_timer.register_timer(
         "ToSqliteFlusher",
         Arc::new(FlushToSqliteTimer::new(app.clone())),
     );
-    my_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+    my_timer.start();
 
-    let mut gc_timer = MyTimer::new(Duration::from_secs(30));
+    let mut gc_timer = MyTimer::new(Duration::from_secs(30), my_logger::LOGGER.clone());
     gc_timer.register_timer("GcTimer", Arc::new(GcTimer::new(app.clone()).await));
     gc_timer.register_timer(
         "TelegramPusher",
         Arc::new(NotifyTelegramTimer::new(app.clone())),
     );
-    gc_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+    gc_timer.start();
 
-    let mut persist_timer = MyTimer::new(Duration::from_secs(60));
+    let mut persist_timer = MyTimer::new(Duration::from_secs(60), my_logger::LOGGER.clone());
     persist_timer.register_timer(
         "PersistStatistics",
         Arc::new(PersistStatisticsTimer::new(app.clone())),
     );
-    persist_timer.start(app.app_states.clone(), my_logger::LOGGER.clone());
+    persist_timer.start();
 
     crate::grpc_server::start(app.clone());
 
