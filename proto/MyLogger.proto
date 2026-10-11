@@ -120,6 +120,8 @@ message HourlyStatisticsGrpcModel{
     uint32 ErrorCount = 5;
     uint32 FatalCount = 6;
     uint32 DebugCount = 7;
+    // The product scope the records of the application went to
+    string Scope = 8;
 }
 
 message GetInsightsKeysResponse{
@@ -178,6 +180,7 @@ service MyLogger {
     rpc GetIgnoreSingleEvents(google.protobuf.Empty) returns (stream IgnoreSingleEventGrpcModel);
     rpc DeleteIgnoreSingleEvent(DeleteIgnoreSingleEventGrpcRequest) returns (google.protobuf.Empty);
 
+    // Of every product scope: a record per hour, scope and application
     rpc GetHourlyStatistics(GetHourlyStatisticsRequest) returns (stream HourlyStatisticsGrpcModel);
 
 

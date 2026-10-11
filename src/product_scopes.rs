@@ -5,7 +5,7 @@ use std::{
 
 use regex::Regex;
 
-use crate::repo::dto::ProductScopeDto;
+use crate::{app::LogItem, repo::dto::ProductScopeDto};
 
 /// The default scope when `settings.json` names none
 pub const DEFAULT_PRODUCT_SCOPE: &str = "default";
@@ -114,6 +114,14 @@ impl ProductScopes {
         }
 
         self.name_of(index)
+    }
+
+    /// The scope a record goes to: the one its writer names, or the one of its application
+    pub fn record_scope<'s>(&'s self, named: Option<&'s str>, item: &LogItem) -> &'s str {
+        match named {
+            Some(scope) => scope,
+            None => self.scope_of(item.ctx.get("Application").map(String::as_str)),
+        }
     }
 
     fn name_of(&self, index: Option<usize>) -> &str {

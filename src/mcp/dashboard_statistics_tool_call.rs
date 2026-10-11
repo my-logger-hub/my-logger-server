@@ -18,7 +18,7 @@ pub struct DashboardStatisticsInputData {
 
 #[derive(ApplyJsonSchema, Debug, Serialize, Deserialize)]
 pub struct DashboardStatisticsResponse {
-    #[property(description: "Hourly buckets, newest hour first, as JSON array string. Each item: {hour: u64 in YYYYMMDDHH UTC form, applications: [{application, info, warning, error, fatal, debug}]}.")]
+    #[property(description: "Hourly buckets, newest hour first, as JSON array string. Each item: {hour: u64 in YYYYMMDDHH UTC form, applications: [{application, product_scope, info, warning, error, fatal, debug}]}. An application whose records went to several product scopes is there once per scope.")]
     pub buckets_json: String,
 
     #[property(description: "Total Info-level events across all returned hours.")]
@@ -45,7 +45,7 @@ impl DashboardStatisticsHandler {
 
 impl ToolDefinition for DashboardStatisticsHandler {
     const FUNC_NAME: &'static str = "get_dashboard_statistics";
-    const DESCRIPTION: &'static str = "Get dashboard-style hourly statistics: per-hour, per-application counts of Info / Warning / Error / FatalError / Debug events. Use this first to spot which application/hour has errors, then call `search_logs` with a tighter time range and the offending Application to investigate.";
+    const DESCRIPTION: &'static str = "Get dashboard-style hourly statistics: per-hour, per-application counts of Info / Warning / Error / FatalError / Debug events. Covers every product scope. Use this first to spot which application/hour has errors, then call `search_logs` with a tighter time range, the offending Application and its `product_scope` to investigate.";
 }
 
 #[async_trait::async_trait]
@@ -74,23 +74,26 @@ impl McpToolCall<DashboardStatisticsInputData, DashboardStatisticsResponse>
 
         let mut buckets = Vec::with_capacity(snapshot.len());
 
-        for (hour, by_app) in snapshot {
-            let mut applications = Vec::with_capacity(by_app.len());
-            for (app_name, item) in by_app {
-                total_info += item.info as i64;
-                total_warning += item.warning as i64;
-                total_error += item.error as i64;
-                total_fatal += item.fatal_error as i64;
-                total_debug += item.debug as i64;
+        for (hour, by_scope) in snapshot {
+            let mut applications = Vec::new();
+            for (scope, by_app) in by_scope {
+                for (app_name, item) in by_app {
+                    total_info += item.info as i64;
+                    total_warning += item.warning as i64;
+                    total_error += item.error as i64;
+                    total_fatal += item.fatal_error as i64;
+                    total_debug += item.debug as i64;
 
-                applications.push(serde_json::json!({
-                    "application": app_name,
-                    "info": item.info,
-                    "warning": item.warning,
-                    "error": item.error,
-                    "fatal": item.fatal_error,
-                    "debug": item.debug,
-                }));
+                    applications.push(serde_json::json!({
+                        "application": app_name,
+                        "product_scope": scope,
+                        "info": item.info,
+                        "warning": item.warning,
+                        "error": item.error,
+                        "fatal": item.fatal_error,
+                        "debug": item.debug,
+                    }));
+                }
             }
 
             buckets.push(serde_json::json!({

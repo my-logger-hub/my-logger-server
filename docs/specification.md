@@ -82,7 +82,7 @@ Scopes и scope по умолчанию задаются через MCP и хр�
 
 `GetProductScopes` — scope по умолчанию (`DefaultScope`) и список: scope по умолчанию первым, затем заданные в порядке проверки — каждый с регулярными выражениями, — затем остальные, по которым есть записи на диске (например, только из заголовка), без выражений.
 
-Статистика, ignore events и Telegram — общие на все scopes.
+Статистика, ignore events и Telegram — общие на все scopes. `GetHourlyStatistics` и MCP `get_dashboard_statistics` отдают счётчики всех scopes, каждый — со scope, в который ушли записи приложения (`Scope`, `product_scope`): по нему их и искать. Приложение, записи которого ушли в несколько scopes, — по строке на scope.
 
 ---
 
@@ -142,7 +142,7 @@ Scopes и scope по умолчанию задаются через MCP и хр�
 
 ### Hourly statistics
 
-In-memory `BTreeMap<StatisticsHour, BTreeMap<Application, Counters>>`. Обновляется синхронно из `flows::post_items::update`. Персистится в `<logs_db_path>/statistics.json` каждые 60 секунд таймером `PersistStatisticsTimer`. На старте `flows::init` восстанавливает структуру из этого файла. `GetStatistic` отдаёт счётчики текущего часа по всем приложениям.
+In-memory `BTreeMap<StatisticsHour, BTreeMap<Scope, BTreeMap<Application, Counters>>>`. Обновляется синхронно из `flows::post_items` — scope записи определяется там же, как для хранения. Персистится в `<logs_db_path>/statistics.json` каждые 60 секунд таймером `PersistStatisticsTimer`. На старте `flows::init` восстанавливает структуру из этого файла; файл формата до product scopes не читается — статистика начинается заново. `GetStatistic` отдаёт счётчики текущего часа по всем scopes и приложениям.
 
 ### settings.json
 

@@ -45,7 +45,7 @@ Records are kept and searched by product scope. A record goes to the scope its w
 
 The scopes and the default scope — `default` until another one is set — are managed through MCP and kept in `settings.json` (see Settings).
 
-A change applies to the records which come after it; the ones written stay in their scope and are searched by its name. A search goes over one scope: `ProductScope` of `Read`, `ScanAndSearch`, `SearchUp`, `SearchDown` and `product_scope` of the MCP `search_logs` — the default scope when it is not given. `GetProductScopes` lists the default scope first, then the scopes as they are set with their regular expressions, then the other scopes there are records of. Statistics, ignore events and Telegram are shared by all scopes.
+A change applies to the records which come after it; the ones written stay in their scope and are searched by its name. A search goes over one scope: `ProductScope` of `Read`, `ScanAndSearch`, `SearchUp`, `SearchDown` and `product_scope` of the MCP `search_logs` — the default scope when it is not given. `GetProductScopes` lists the default scope first, then the scopes as they are set with their regular expressions, then the other scopes there are records of. Statistics, ignore events and Telegram are shared by all scopes: `GetHourlyStatistics` and the MCP `get_dashboard_statistics` count every scope, each application with the scope its records went to (`Scope`, `product_scope`) — the one to search them in.
 
 ## MCP server
 

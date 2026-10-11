@@ -12,11 +12,14 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>, scope: Optio
 
     let log_events = filter_single_ignore_events(app, log_events).await;
 
+    let scope = scope.and_then(to_scope_name);
+
     {
+        let product_scopes = app.logs_storage.product_scopes();
         let mut hourly_statistics = app.hourly_statistics.lock().await;
         let mut telegram_notification_data = app.telegram_notification_data.lock().await;
         for itm in log_events.iter() {
-            hourly_statistics.update(&itm);
+            hourly_statistics.update(&itm, product_scopes.record_scope(scope.as_deref(), &itm));
             telegram_notification_data.update(&itm);
         }
     }
@@ -29,7 +32,6 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>, scope: Optio
         elastic.logs_queue.add(log_events.clone()).await;
     }
 
-    let scope = scope.and_then(to_scope_name);
     let dropped = app.logs_storage.add_pending(log_events, scope.as_deref());
 
     if dropped > 0 {

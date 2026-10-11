@@ -258,12 +258,7 @@ impl LogsStorage {
             items,
             Instant::now(),
             DateTimeAsMicroseconds::now().unix_microseconds,
-            |item| match scope {
-                Some(scope) => scope.to_string(),
-                None => scopes
-                    .scope_of(item.ctx.get("Application").map(String::as_str))
-                    .to_string(),
-            },
+            |item| scopes.record_scope(scope, item).to_string(),
         )
     }
 

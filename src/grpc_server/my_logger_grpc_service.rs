@@ -318,19 +318,22 @@ impl MyLogger for GrpcService {
                 read_access.get_max_hours(request.amount_of_hours as usize)
             };
 
-            for (hour, items) in result {
-                for (app, statistics) in items {
-                    let _ = stream_result
-                        .send(HourlyStatisticsGrpcModel {
-                            hour_key: hour.get_value(),
-                            app,
-                            info_count: statistics.info,
-                            warning_count: statistics.warning,
-                            error_count: statistics.error,
-                            fatal_count: statistics.fatal_error,
-                            debug_count: statistics.debug,
-                        })
-                        .await;
+            for (hour, scopes) in result {
+                for (scope, apps) in scopes {
+                    for (app, statistics) in apps {
+                        let _ = stream_result
+                            .send(HourlyStatisticsGrpcModel {
+                                hour_key: hour.get_value(),
+                                app,
+                                info_count: statistics.info,
+                                warning_count: statistics.warning,
+                                error_count: statistics.error,
+                                fatal_count: statistics.fatal_error,
+                                debug_count: statistics.debug,
+                                scope: scope.clone(),
+                            })
+                            .await;
+                    }
                 }
             }
         });
