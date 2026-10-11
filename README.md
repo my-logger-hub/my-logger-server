@@ -30,16 +30,27 @@ elastic: # optional: the records are copied to Elastic with it
   esecure: string
   env_source: prod
 
-s3: # optional: without it the Warning/Error/Fatal logs are deleted 2 hours after their hour ends
-  endpoint: https://fsn1.your-objectstorage.com
-  region: fsn1
-  access_key: string
-  secret_key: string
-  bucket: my-logs
-  prefix: logs # optional, logs when not set
+# optional: without it the Warning/Error/Fatal logs are deleted 2 hours after their hour ends
+s3_conn_string: "Endpoint=https://fsn1.your-objectstorage.com;Region=fsn1;AccessKey=...;SecretKey=...;Bucket=my-logs"
 ```
 
-The settings are re-read every minute, but `logs_db_path`, `env_name`, `elastic` and `s3` are taken at start: after changing them, restart the server.
+The settings are re-read every minute, but `logs_db_path`, `env_name`, `elastic` and `s3_conn_string` are taken at start: after changing them, restart the server.
+
+### `s3_conn_string`
+
+`Key=Value` pairs separated by `;`, the same as in my-service-bus-persistence:
+
+| Key | |
+|---|---|
+| `Endpoint` | The S3 endpoint URL, with the scheme. |
+| `Region` | The region for the SigV4 signature. |
+| `AccessKey` | The access key id. |
+| `SecretKey` | The secret access key. Only the first `=` separates, so a base64 secret with its own `=` is fine. |
+| `Bucket` | The bucket. |
+| `Prefix` | Optional. The folder of the logs in the bucket; `logs` when it is not given. |
+| `Debug` | Optional. `Debug=1` prints every S3 request to the console (`1`/`0`, `true`/`false`, `yes`/`no`, `on`/`off`). |
+
+`Endpoint`, `Region`, `AccessKey`, `SecretKey` and `Bucket` are required. A missing or misspelled key stops the server at start rather than silently leaving S3 out; an empty string means no S3.
 
 ## Environment variables
 
@@ -62,7 +73,7 @@ A writer may name the product scope of its logs with the `scope` header (HTTP) o
 
 ## After the start
 
-Nothing else is required: without further settings all the logs go to the `default` scope, and with `s3` the logs are kept in S3 for a week.
+Nothing else is required: without further settings all the logs go to the `default` scope, and with `s3_conn_string` the logs are kept in S3 for a week.
 
 The rest is set at runtime through MCP (`/mcp`) and kept by the server in `<logs_db_path>/settings.json` — not by hand:
 

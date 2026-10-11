@@ -12,7 +12,7 @@ use my_s3::{S3Client, S3ListObjectsRequest};
 use rust_extensions::AsyncBytesStream;
 use tokio::io::AsyncWriteExt;
 
-use crate::{repo::DateHourKey, settings::S3Settings};
+use crate::{repo::DateHourKey, settings::S3ConnectionSettings};
 
 use super::{
     data_file_name, index_file_name, key_index_file_name, scoped_name, DataSource, DataStream,
@@ -51,7 +51,7 @@ pub struct S3Archive {
 }
 
 impl S3Archive {
-    pub fn new(settings: &S3Settings) -> Self {
+    pub fn new(settings: &S3ConnectionSettings) -> Self {
         let prefix = settings
             .prefix
             .as_deref()
@@ -59,13 +59,24 @@ impl S3Archive {
             .filter(|prefix| !prefix.is_empty())
             .unwrap_or(DEFAULT_PREFIX);
 
+        let client = S3Client::new(
+            settings.access_key.as_str(),
+            settings.secret_key.as_str(),
+            settings.region.as_str(),
+            settings.endpoint.as_str(),
+        );
+
+        // `Debug=1`: every request is traced to stdout - the verb, the url and the body size
+        // going out, the whole answer body when it failed. The `Authorization` header is not.
+        let client = if settings.debug {
+            println!("S3 request tracing is ON (Debug in s3_conn_string)");
+            client.debug_to_console()
+        } else {
+            client
+        };
+
         Self {
-            client: S3Client::new(
-                settings.access_key.as_str(),
-                settings.secret_key.as_str(),
-                settings.region.as_str(),
-                settings.endpoint.as_str(),
-            ),
+            client,
             bucket: settings.bucket.clone(),
             prefix: format!("{}/", prefix),
             indexes: Mutex::new(BTreeMap::new()),

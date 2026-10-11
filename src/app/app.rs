@@ -76,7 +76,7 @@ impl AppContext {
         let debug_console = Arc::new(DebugConsole::new());
 
         let s3 = settings_reader
-            .get_s3_settings()
+            .get_s3_connection()
             .await
             .map(|settings| S3Archive::new(&settings));
 
