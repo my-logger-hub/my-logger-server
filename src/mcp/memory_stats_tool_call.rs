@@ -36,9 +36,6 @@ pub struct MemoryStatsResponse {
     #[property(description: "32 KB frames of the data files held in memory: the last frame of each hour written into.")]
     pub cached_frames: i64,
 
-    #[property(description: "Insights cache: number of cached values per context key, as JSON object string. Capped at 10000 values per key.")]
-    pub insights_counts_json: String,
-
     #[property(description: "Hours currently held in the in-memory hourly statistics (max 48).")]
     pub hourly_statistics_hours: i64,
 }
@@ -55,7 +52,7 @@ impl MemoryStatsHandler {
 
 impl ToolDefinition for MemoryStatsHandler {
     const FUNC_NAME: &'static str = "get_memory_stats";
-    const DESCRIPTION: &'static str = "Get memory-management diagnostics of the logger server itself: jemalloc allocator statistics (allocated / active / resident / mapped / retained / metadata) plus the internal state that drives memory usage - records waiting to be written, open hour files and the frames held of them, insights cache sizes, hourly-statistics retention. Use it to diagnose memory consumption or to verify that memory is released after load. For a history of allocator readings (sampled every 30s) call `get_debug_console`.";
+    const DESCRIPTION: &'static str = "Get memory-management diagnostics of the logger server itself: jemalloc allocator statistics (allocated / active / resident / mapped / retained / metadata) plus the internal state that drives memory usage - records waiting to be written, open hour files and the frames held of them, hourly-statistics retention. Use it to diagnose memory consumption or to verify that memory is released after load. For a history of allocator readings (sampled every 30s) call `get_debug_console`.";
 }
 
 #[async_trait::async_trait]
@@ -68,7 +65,6 @@ impl McpToolCall<MemoryStatsInputData, MemoryStatsResponse> for MemoryStatsHandl
         let mb = |value: usize| (value / 1024 / 1024) as i64;
 
         let storage = self.app.logs_storage.stats();
-        let insights = self.app.insights_repo.get_value_counts().await;
 
         let hourly_statistics_hours = {
             let read_access = self.app.hourly_statistics.lock().await;
@@ -86,8 +82,6 @@ impl McpToolCall<MemoryStatsInputData, MemoryStatsResponse> for MemoryStatsHandl
             open_hour_files_json: serde_json::to_string(&storage.open_hours)
                 .unwrap_or_else(|_| "[]".to_string()),
             cached_frames: storage.cached_frames as i64,
-            insights_counts_json: serde_json::to_string(&insights)
-                .unwrap_or_else(|_| "{}".to_string()),
             hourly_statistics_hours,
         })
     }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::contracts::*;
+use super::{contracts::*, get_scope};
 use my_http_server::{macros::http_route, HttpContext, HttpFailResult, HttpOkResult, HttpOutput};
 
 use crate::app::AppContext;
@@ -28,7 +28,7 @@ impl PostLogsAction {
 async fn handle_request(
     action: &PostLogsAction,
     input_data: SeqInputHttpData,
-    _ctx: &HttpContext,
+    ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
     /*
     println!(
@@ -39,7 +39,7 @@ async fn handle_request(
     let log_events = input_data.parse_log_events();
 
     if let Some(log_events) = log_events {
-        crate::flows::post_items(&action.app, log_events).await;
+        crate::flows::post_items(&action.app, log_events, get_scope(ctx)).await;
     }
 
     return HttpOutput::Empty.into_ok_result(true).into();

@@ -9,8 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use crate::repo::DateHourKey;
 
 use super::{
-    data_file_name, Entry, Frame, FrameId, HourCells, S3Archive, FRAME_HEADER_LEN, FRAME_LEN,
-    MAX_DATA_FILES, MICROS_PER_SECOND,
+    data_file_name, scoped_name, Entry, Frame, FrameId, HourCells, S3Archive, FRAME_HEADER_LEN,
+    FRAME_LEN, MAX_DATA_FILES, MICROS_PER_SECOND,
 };
 
 /// How much of a local file one chunk of its stream is - and how much a read of a part of
@@ -142,20 +142,32 @@ pub async fn read_bytes(source: &DataSource, offset: u64, len: usize) -> Result<
     Ok(reader.as_slice()[..read].to_vec())
 }
 
-/// The data files of an hour: `.data00`, `.data01`... on the local disk or in S3
+/// The data files of an hour: `.data00`, `.data01`... on the local disk, or in S3 under
+/// the folder of the product scope
 #[derive(Clone)]
 pub enum DataFiles {
-    Local { dir: PathBuf, hour: DateHourKey },
-    S3 { archive: Arc<S3Archive>, hour: DateHourKey },
+    Local {
+        dir: PathBuf,
+        hour: DateHourKey,
+    },
+    S3 {
+        archive: Arc<S3Archive>,
+        scope: String,
+        hour: DateHourKey,
+    },
 }
 
 impl DataFiles {
     pub fn file(&self, file: u8) -> DataSource {
         match self {
             DataFiles::Local { dir, hour } => DataSource::Local(dir.join(data_file_name(*hour, file))),
-            DataFiles::S3 { archive, hour } => DataSource::S3 {
+            DataFiles::S3 {
+                archive,
+                scope,
+                hour,
+            } => DataSource::S3 {
                 archive: archive.clone(),
-                file_name: data_file_name(*hour, file),
+                file_name: scoped_name(scope, data_file_name(*hour, file)),
             },
         }
     }

@@ -16,12 +16,22 @@ use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The metadata of `Write` naming the product scope of the records
+const SCOPE_HEADER: &str = "scope";
+
 #[tonic::async_trait]
 impl MyLogger for GrpcService {
     async fn write(
         &self,
         request: tonic::Request<tonic::Streaming<LogEventGrpcModel>>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
+        // The product scope the writer names: the records go by the product scopes without it
+        let scope = request
+            .metadata()
+            .get(SCOPE_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+
         let items = my_grpc_extensions::read_grpc_stream::as_vec_with_transformation(
             request.into_inner(),
             READ_TIMEOUT,
@@ -31,7 +41,7 @@ impl MyLogger for GrpcService {
         .unwrap();
 
         if items.len() > 0 {
-            crate::flows::post_items(&self.app, items).await;
+            crate::flows::post_items(&self.app, items, scope.as_deref()).await;
         }
 
         return Ok(tonic::Response::new(()));
@@ -49,6 +59,7 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
+        let product_scope = self.requested_scope(request.product_scope.as_deref())?;
         let levels: Vec<_> = request.levels().collect();
         let range = RequestType::from_request(request.from_time, request.to_time);
         println!("ReadLogEventRequest in range: {:?}", range);
@@ -73,6 +84,7 @@ impl MyLogger for GrpcService {
 
                 crate::flows::search_logs(
                     &self.app,
+                    &product_scope,
                     date_key.hour_start(),
                     date_key.hour_end(),
                     log_levels,
@@ -86,6 +98,7 @@ impl MyLogger for GrpcService {
             RequestType::DateRange(from_date, to_date) => {
                 crate::flows::get_events(
                     &self.app,
+                    &product_scope,
                     levels,
                     request.context_keys,
                     from_date,
@@ -143,6 +156,7 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
+        let product_scope = self.requested_scope(request.product_scope.as_deref())?;
         let range = RequestType::from_request(request.from_time, request.to_time);
 
         println!("ScanAndSearchRequest in range: {:?}", range);
@@ -151,6 +165,7 @@ impl MyLogger for GrpcService {
             RequestType::HourKey(date_hour_key) => {
                 crate::flows::search_logs(
                     &self.app,
+                    &product_scope,
                     date_hour_key.hour_start(),
                     date_hour_key.hour_end(),
                     None,
@@ -164,6 +179,7 @@ impl MyLogger for GrpcService {
             RequestType::DateRange(from_date, to_date) => {
                 crate::flows::search_and_scan(
                     &self.app,
+                    &product_scope,
                     from_date,
                     to_date,
                     &request.phrase,
@@ -187,7 +203,7 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::SearchUpStream>, tonic::Status> {
         let response = self
             .search_logs(request.into_inner(), SearchDirection::Up)
-            .await;
+            .await?;
 
         my_grpc_extensions::grpc_server_streams::send_from_iterator_with_transformation(
             response.into_iter(),
@@ -203,7 +219,7 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<Self::SearchDownStream>, tonic::Status> {
         let response = self
             .search_logs(request.into_inner(), SearchDirection::Down)
-            .await;
+            .await?;
 
         my_grpc_extensions::grpc_server_streams::send_from_iterator_with_transformation(
             response.into_iter(),
@@ -322,34 +338,19 @@ impl MyLogger for GrpcService {
         Ok(result)
     }
 
+    /// No insights are collected for now: the UI gets no keys
     async fn get_insights_keys(
         &self,
-        request: tonic::Request<()>,
+        _request: tonic::Request<()>,
     ) -> Result<tonic::Response<GetInsightsKeysResponse>, tonic::Status> {
-        let _request = request.into_inner();
-
-        let keys = self.app.insights_repo.get_keys().await;
-
-        let result = GetInsightsKeysResponse { keys };
-
-        Ok(tonic::Response::new(result))
+        Ok(tonic::Response::new(GetInsightsKeysResponse { keys: Vec::new() }))
     }
 
     async fn get_insights_values(
         &self,
-        request: tonic::Request<GetInsightsValuesRequest>,
+        _request: tonic::Request<GetInsightsValuesRequest>,
     ) -> Result<tonic::Response<GetInsightsValuesResponse>, tonic::Status> {
-        let request = request.into_inner();
-
-        let values = self
-            .app
-            .insights_repo
-            .get_values(request.key.as_str(), request.phrase.as_str(), 20)
-            .await;
-
-        let result = GetInsightsValuesResponse { values };
-
-        Ok(tonic::Response::new(result))
+        Ok(tonic::Response::new(GetInsightsValuesResponse { values: Vec::new() }))
     }
 
     async fn get_server_info(
@@ -358,10 +359,32 @@ impl MyLogger for GrpcService {
     ) -> Result<tonic::Response<ServerInfoGrpcResponse>, tonic::Status> {
         let response = ServerInfoGrpcResponse {
             version: APP_VERSION.to_string(),
-            hours_to_gc: self.app.settings_reader.get_hours_to_gc().await as u32,
+            hours_to_gc: self.app.settings_repo.get_hours_to_gc().await as u32,
         };
 
         Ok(tonic::Response::new(response))
+    }
+
+    async fn get_product_scopes(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<GetProductScopesResponse>, tonic::Status> {
+        let product_scopes = self.app.logs_storage.product_scopes();
+        let with_records = self.app.logs_storage.scopes_with_records();
+
+        let scopes = product_scopes
+            .list(&with_records)
+            .into_iter()
+            .map(|(name, applications)| ProductScopeGrpcModel {
+                name: name.to_string(),
+                applications: applications.to_vec(),
+            })
+            .collect();
+
+        Ok(tonic::Response::new(GetProductScopesResponse {
+            default_scope: product_scopes.default_scope().to_string(),
+            scopes,
+        }))
     }
 
     async fn ping(&self, _: tonic::Request<()>) -> Result<tonic::Response<()>, tonic::Status> {
@@ -380,10 +403,12 @@ impl GrpcService {
         &self,
         request: SearchLogsRequest,
         direction: SearchDirection,
-    ) -> Vec<LogItemDto> {
+    ) -> Result<Vec<LogItemDto>, tonic::Status> {
         if is_valid_url_to_update(request.ui_url.as_str()) {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
+
+        let product_scope = self.requested_scope(request.product_scope.as_deref())?;
 
         let levels: Vec<LogLevelDto> = request.levels().map(|level| level.into()).collect();
         let context: BTreeMap<String, String> = request
@@ -395,8 +420,9 @@ impl GrpcService {
         let (from_date, to_date) =
             RequestType::from_request(request.from_time, request.to_time).get_range();
 
-        crate::flows::search_logs(
+        let result = crate::flows::search_logs(
             &self.app,
+            &product_scope,
             from_date,
             to_date,
             (!levels.is_empty()).then_some(levels),
@@ -405,7 +431,18 @@ impl GrpcService {
             request.take as usize,
             direction,
         )
-        .await
+        .await;
+
+        Ok(result)
+    }
+
+    /// The default product scope when the request names none
+    fn requested_scope(&self, scope: Option<&str>) -> Result<String, tonic::Status> {
+        self.app
+            .logs_storage
+            .product_scopes()
+            .requested(scope)
+            .map_err(tonic::Status::invalid_argument)
     }
 }
 

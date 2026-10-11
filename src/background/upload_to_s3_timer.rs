@@ -10,7 +10,7 @@ use rust_extensions::{date_time::DateTimeAsMicroseconds, MyTimerTick, RepeatTime
 
 use crate::app::AppContext;
 
-/// The hours of S3 older than `hours_to_gc` are looked for this often
+/// The hours of S3 older than `hours_to_gc` of `settings.json` are looked for this often
 const S3_GC_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 /// Uploads the Warning, Error and FatalError hours whose time on the local disk is over,
@@ -38,12 +38,14 @@ impl UploadToS3Timer {
 impl MyTimerTick for UploadToS3Timer {
     async fn tick(&self) -> RepeatTimerIteration {
         let now = DateTimeAsMicroseconds::now();
-        let hours_to_gc = self.app.settings_reader.get_hours_to_gc().await;
+        let hours_to_gc = self.app.settings_repo.get_hours_to_gc().await;
 
-        for hour in self.app.logs_storage.hours_to_upload(now, hours_to_gc) {
-            let message = match self.app.logs_storage.clone().upload_hour(hour).await {
-                Ok(()) => format!("S3: {} is uploaded", hour.get_value()),
-                Err(err) => format!("S3: {} is not uploaded: {}", hour.get_value(), err),
+        for (scope, hour) in self.app.logs_storage.hours_to_upload(now, hours_to_gc) {
+            let name = format!("{}/{}", scope, hour.get_value());
+
+            let message = match self.app.logs_storage.clone().upload_hour(scope, hour).await {
+                Ok(()) => format!("S3: {} is uploaded", name),
+                Err(err) => format!("S3: {} is not uploaded: {}", name, err),
             };
 
             self.report(message).await;
@@ -56,8 +58,8 @@ impl MyTimerTick for UploadToS3Timer {
 
             match self.app.logs_storage.gc_s3(now, hours_to_gc).await {
                 Ok(hours) => {
-                    for hour in hours {
-                        self.report(format!("S3 GC: {} is deleted", hour.get_value()))
+                    for (scope, hour) in hours {
+                        self.report(format!("S3 GC: {}/{} is deleted", scope, hour.get_value()))
                             .await;
                     }
                 }

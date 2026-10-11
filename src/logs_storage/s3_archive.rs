@@ -15,8 +15,8 @@ use tokio::io::AsyncWriteExt;
 use crate::{repo::DateHourKey, settings::S3Settings};
 
 use super::{
-    data_file_name, index_file_name, key_index_file_name, DataSource, DataStream, HourCells,
-    KeyIndexDirectory, S3ObjectStream,
+    data_file_name, index_file_name, key_index_file_name, scoped_name, DataSource, DataStream,
+    HourCells, KeyIndexDirectory, S3ObjectStream,
 };
 
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -45,7 +45,8 @@ pub struct S3Archive {
     bucket: String,
     /// Ends with '/'
     prefix: String,
-    indexes: Mutex<BTreeMap<DateHourKey, CachedIndex>>,
+    /// By product scope and hour
+    indexes: Mutex<BTreeMap<(String, DateHourKey), CachedIndex>>,
     bucket_is_ready: AtomicBool,
 }
 
@@ -76,27 +77,30 @@ impl S3Archive {
         format!("{}{}", self.prefix, file_name)
     }
 
-    /// The index of an hour and the page of its key index; `None` - the hour is not in S3
+    /// The index of an hour of the scope and the page of its key index; `None` - the hour
+    /// is not in S3
     pub async fn get_indexes(
         archive: &Arc<S3Archive>,
+        scope: &str,
         hour: DateHourKey,
     ) -> Result<Option<HourIndexes>, String> {
         let this = archive.as_ref();
+        let cache_key = (scope.to_string(), hour);
 
-        if let Some(cached) = this.indexes.lock().unwrap().get(&hour) {
+        if let Some(cached) = this.indexes.lock().unwrap().get(&cache_key) {
             if cached.indexes.is_some() || cached.loaded.elapsed() < MISSING_HOUR_TTL {
                 return Ok(cached.indexes.clone());
             }
         }
 
-        let indexes_of_hour = match this.download(index_file_name(hour)).await? {
+        let indexes_of_hour = match this.download(scoped_name(scope, index_file_name(hour))).await? {
             Some(bytes) => {
                 let cells = HourCells::from_index_file(&bytes)
                     .ok_or_else(|| format!("The index of {} in S3 is not an index", hour.get_value()))?;
 
                 let source = DataSource::S3 {
                     archive: archive.clone(),
-                    file_name: key_index_file_name(hour),
+                    file_name: scoped_name(scope, key_index_file_name(hour)),
                 };
 
                 // Without a key index every search of the hour scans it
@@ -119,7 +123,7 @@ impl S3Archive {
             let oldest = indexes
                 .iter()
                 .min_by_key(|(_, cached)| cached.loaded)
-                .map(|(hour, _)| *hour);
+                .map(|(key, _)| key.clone());
 
             if let Some(oldest) = oldest {
                 indexes.remove(&oldest);
@@ -127,7 +131,7 @@ impl S3Archive {
         }
 
         indexes.insert(
-            hour,
+            cache_key,
             CachedIndex {
                 indexes: indexes_of_hour.clone(),
                 loaded: Instant::now(),
@@ -170,6 +174,7 @@ impl S3Archive {
     /// then the key index and the index: an hour is in S3 once its index is.
     pub async fn upload(
         &self,
+        scope: &str,
         hour: DateHourKey,
         data_paths: &[PathBuf],
         index_path: &Path,
@@ -195,13 +200,13 @@ impl S3Archive {
         }
 
         for (file, data_path) in data_paths.iter().enumerate() {
-            self.upload_data_file(data_path, self.key(data_file_name(hour, file as u8)))
+            self.upload_data_file(data_path, self.key(scoped_name(scope, data_file_name(hour, file as u8))))
                 .await?;
         }
 
         for (path, file_name) in [
-            (key_index_path, key_index_file_name(hour)),
-            (index_path, index_file_name(hour)),
+            (key_index_path, scoped_name(scope, key_index_file_name(hour))),
+            (index_path, scoped_name(scope, index_file_name(hour))),
         ] {
             let content = tokio::fs::read(path)
                 .await
@@ -215,7 +220,7 @@ impl S3Archive {
                 .map_err(|err| format!("Upload of {}: {}", key, err))?;
         }
 
-        self.indexes.lock().unwrap().remove(&hour);
+        self.indexes.lock().unwrap().remove(&(scope.to_string(), hour));
 
         Ok(())
     }
@@ -262,8 +267,11 @@ impl S3Archive {
 
     /// Deletes every hour up to `cutoff` - every object of it the bucket lists: its index
     /// first, so an hour deleted halfway is not read
-    pub async fn delete_up_to(&self, cutoff: DateHourKey) -> Result<Vec<DateHourKey>, String> {
-        let mut hours: BTreeMap<DateHourKey, Vec<String>> = BTreeMap::new();
+    pub async fn delete_up_to(
+        &self,
+        cutoff: DateHourKey,
+    ) -> Result<Vec<(String, DateHourKey)>, String> {
+        let mut hours: BTreeMap<(String, DateHourKey), Vec<String>> = BTreeMap::new();
         let mut continuation_token: Option<String> = None;
 
         loop {
@@ -281,17 +289,23 @@ impl S3Archive {
                 .map_err(|err| format!("Listing of {}: {}", self.bucket, err))?;
 
             for object in &page.objects {
-                // `YYYYMMDDHH.` and what the file of the hour is
-                let hour = object
+                // `scope/YYYYMMDDHH.` and what the file of the hour is
+                let scope_and_hour = object
                     .key
                     .strip_prefix(self.prefix.as_str())
-                    .filter(|name| name.get(10..11) == Some("."))
-                    .and_then(|name| name.get(..10))
-                    .and_then(DateHourKey::parse_from_str);
+                    .and_then(|name| name.split_once('/'))
+                    .filter(|(_, name)| name.get(10..11) == Some("."))
+                    .and_then(|(scope, name)| {
+                        let hour = DateHourKey::parse_from_str(name.get(..10)?)?;
+                        Some((scope.to_string(), hour))
+                    });
 
-                if let Some(hour) = hour {
+                if let Some((scope, hour)) = scope_and_hour {
                     if hour <= cutoff {
-                        hours.entry(hour).or_default().push(object.key.clone());
+                        hours
+                            .entry((scope, hour))
+                            .or_default()
+                            .push(object.key.clone());
                     }
                 }
             }
@@ -303,8 +317,9 @@ impl S3Archive {
             }
         }
 
-        for (hour, mut keys) in hours.iter_mut().map(|(hour, keys)| (*hour, std::mem::take(keys))) {
-            let index_key = self.key(index_file_name(hour));
+        for ((scope, hour), keys) in hours.iter_mut() {
+            let mut keys = std::mem::take(keys);
+            let index_key = self.key(scoped_name(scope, index_file_name(*hour)));
             keys.sort_by_key(|key| *key != index_key);
 
             for key in keys {
@@ -314,7 +329,7 @@ impl S3Archive {
                     .map_err(|err| format!("Delete of {}: {}", key, err))?;
             }
 
-            self.indexes.lock().unwrap().remove(&hour);
+            self.indexes.lock().unwrap().remove(&(scope.clone(), *hour));
         }
 
         Ok(hours.into_keys().collect())

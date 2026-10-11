@@ -25,6 +25,9 @@ pub struct SearchLogsInputData {
     #[property(description: "Range end, ISO-8601 / RFC-3339 in UTC. Example: 2026-04-28T11:00:00Z. Inclusive.")]
     pub to_date: String,
 
+    #[property(description: "Optional. The product scope to search - see get_product_scopes. If omitted, the default scope.")]
+    pub product_scope: Option<String>,
+
     #[property(description: "Optional. Filter by application name. Matches the 'Application' context key. Case-insensitive.")]
     pub application: Option<String>,
 
@@ -68,7 +71,7 @@ impl SearchLogsHandler {
 
 impl ToolDefinition for SearchLogsHandler {
     const FUNC_NAME: &'static str = "search_logs";
-    const DESCRIPTION: &'static str = "Search log records by time range with optional application, version, level and substring phrase filters. Returns the latest matching records, at most `take` of them, sorted by timestamp ascending.";
+    const DESCRIPTION: &'static str = "Search log records of a product scope by time range with optional application, version, level and substring phrase filters. Returns the latest matching records, at most `take` of them, sorted by timestamp ascending.";
 }
 
 #[async_trait::async_trait]
@@ -83,6 +86,12 @@ impl McpToolCall<SearchLogsInputData, SearchLogsResponse> for SearchLogsHandler 
         if to_dt.unix_microseconds <= from_dt.unix_microseconds {
             return Err("`to_date` must be strictly greater than `from_date`".to_string());
         }
+
+        let product_scope = self
+            .app
+            .logs_storage
+            .product_scopes()
+            .requested(model.product_scope.as_deref())?;
 
         let take = model.take.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
 
@@ -115,6 +124,7 @@ impl McpToolCall<SearchLogsInputData, SearchLogsResponse> for SearchLogsHandler 
 
         let mut items = crate::flows::search_logs(
             &self.app,
+            &product_scope,
             from_dt,
             to_dt,
             levels,

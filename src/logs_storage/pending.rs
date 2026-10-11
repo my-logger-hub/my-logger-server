@@ -59,9 +59,10 @@ struct PendingBucket {
     records: Vec<PendingRecord>,
 }
 
-/// The records of one second of a stream which have waited long enough
+/// The records of one second of a stream of a product scope which have waited long enough
 pub struct ReadyBucket {
     pub stream: LogsStream,
+    pub scope: String,
     /// Unix seconds
     pub second: i64,
     pub records: Vec<PendingRecord>,
@@ -79,22 +80,29 @@ impl ReadyBucket {
     }
 }
 
-/// The records waiting to be written, by stream and second. A second waits
+/// The records waiting to be written, by stream, product scope and second. A second waits
 /// `PENDING_DELAY` from its first record.
 #[derive(Default)]
 pub struct PendingLogs {
-    buckets: BTreeMap<(LogsStream, i64), PendingBucket>,
+    buckets: BTreeMap<(LogsStream, String, i64), PendingBucket>,
     records: usize,
 }
 
 impl PendingLogs {
     /// Returns how many records were dropped to keep the buffer bounded
-    pub fn add(&mut self, items: Vec<Arc<LogItem>>, now: Instant, now_micros: i64) -> usize {
+    pub fn add(
+        &mut self,
+        items: Vec<Arc<LogItem>>,
+        now: Instant,
+        now_micros: i64,
+        scope_of: impl Fn(&LogItem) -> String,
+    ) -> usize {
         for item in items {
             let timestamp = effective_timestamp(item.timestamp.unix_microseconds, now_micros);
             let level: LogLevelDto = (&item.level).into();
             let key = (
                 LogsStream::of(&level),
+                scope_of(&item),
                 timestamp.div_euclid(MICROS_PER_SECOND),
             );
 
@@ -117,7 +125,7 @@ impl PendingLogs {
                 .buckets
                 .iter()
                 .min_by_key(|(_, bucket)| bucket.created)
-                .map(|(key, _)| *key)
+                .map(|(key, _)| key.clone())
                 .unwrap();
 
             let bucket = self.buckets.remove(&oldest).unwrap();
@@ -130,11 +138,11 @@ impl PendingLogs {
 
     /// The seconds which have waited `PENDING_DELAY` - or all of them
     pub fn take_ready(&mut self, now: Instant, all: bool) -> Vec<ReadyBucket> {
-        let keys: Vec<(LogsStream, i64)> = self
+        let keys: Vec<(LogsStream, String, i64)> = self
             .buckets
             .iter()
             .filter(|(_, bucket)| all || now.duration_since(bucket.created) >= PENDING_DELAY)
-            .map(|(key, _)| *key)
+            .map(|(key, _)| key.clone())
             .collect();
 
         keys.into_iter()
@@ -142,9 +150,12 @@ impl PendingLogs {
                 let bucket = self.buckets.remove(&key).unwrap();
                 self.records -= bucket.records.len();
 
+                let (stream, scope, second) = key;
+
                 ReadyBucket {
-                    stream: key.0,
-                    second: key.1,
+                    stream,
+                    scope,
+                    second,
                     records: bucket.records,
                 }
             })
@@ -155,14 +166,21 @@ impl PendingLogs {
         self.records
     }
 
-    /// The waiting records of `from ..= to` which match
-    pub fn search(&self, from: i64, to: i64, filter: &SearchFilter) -> Vec<LogItemDto> {
+    /// The waiting records of the scope in `from ..= to` which match
+    pub fn search(
+        &self,
+        scope: &str,
+        from: i64,
+        to: i64,
+        filter: &SearchFilter,
+    ) -> Vec<LogItemDto> {
         let mut result = Vec::new();
 
-        for ((stream, second), bucket) in &self.buckets {
+        for ((stream, bucket_scope, second), bucket) in &self.buckets {
             let second_start = second * MICROS_PER_SECOND;
 
-            if !filter.wants(*stream)
+            if bucket_scope != scope
+                || !filter.wants(*stream)
                 || second_start > to
                 || second_start + MICROS_PER_SECOND <= from
             {

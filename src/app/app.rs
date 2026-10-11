@@ -8,8 +8,8 @@ use crate::{
     cache::FilterEventsCache,
     hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
-    insights_repo::InsightsRepo,
     logs_storage::{LogsStorage, S3Archive},
+    product_scopes::ProductScopes,
     repo::SettingsRepo,
     telegram::TelegramNotificationData,
 };
@@ -34,8 +34,6 @@ pub struct AppContext {
     pub ignore_single_event_cache: Mutex<IgnoreSingleEventCache>,
 
     pub telegram_notification_data: Mutex<TelegramNotificationData>,
-
-    pub insights_repo: InsightsRepo,
 
     pub hourly_statistics: Mutex<HourlyStatistics>,
 
@@ -75,10 +73,6 @@ impl AppContext {
 
         let env_name = settings_reader.get_env_name().await;
 
-        let insight_keys = settings_reader.get_insights_keys().await;
-
-        let insights_repo = InsightsRepo::new(insight_keys.clone(), 1024);
-
         let debug_console = Arc::new(DebugConsole::new());
 
         let s3 = settings_reader
@@ -86,11 +80,16 @@ impl AppContext {
             .await
             .map(|settings| S3Archive::new(&settings));
 
+        let settings_repo = SettingsRepo::new(settings_db_path).await;
+        let product_scopes = settings_repo.get_product_scopes().await;
+        let product_scopes =
+            ProductScopes::new(&product_scopes.default_scope, &product_scopes.scopes);
+
         Self {
             app_states: Arc::new(AppStates::create_initialized()),
-            logs_storage: Arc::new(LogsStorage::new(logs_db_path, s3, insight_keys.clone())),
+            logs_storage: Arc::new(LogsStorage::new(logs_db_path, s3, product_scopes)),
             env_name,
-            settings_repo: SettingsRepo::new(settings_db_path).await,
+            settings_repo,
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),
             hourly_statistics: Mutex::new(HourlyStatistics::new()),
@@ -108,7 +107,6 @@ impl AppContext {
                 }),
             settings_reader,
             is_debug,
-            insights_repo,
             telegram_notification_data: Mutex::new(TelegramNotificationData::new()),
             ui_url: Mutex::new(String::new()),
             debug_console,

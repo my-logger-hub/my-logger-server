@@ -39,6 +39,8 @@ message ReadLogEventRequest{
     int32 Skip = 5;
     repeated LogLevelGrpcModel Levels = 6;
     repeated LogEventContext ContextKeys = 7;
+    // The default product scope when it is not set
+    optional string ProductScope = 8;
 }
 
 message GetStatisticRequest{
@@ -78,6 +80,8 @@ message SearchLogsRequest{
     repeated LogLevelGrpcModel Levels = 5;
     repeated LogEventContext ContextKeys = 6;
     string Phrase = 7;
+    // The default product scope when it is not set
+    optional string ProductScope = 8;
 }
 
 message ScanAndSearchRequest{
@@ -86,6 +90,8 @@ message ScanAndSearchRequest{
     int64 FromTime = 3;
     int64 ToTime = 4;
     int32 Take = 5;
+    // The default product scope when it is not set
+    optional string ProductScope = 6;
 }
 
 message IgnoreSingleEventGrpcModel{
@@ -130,6 +136,20 @@ message GetInsightsValuesResponse{
 }
 
 
+// Applications are the regular expressions an application name matches whole, ignoring
+// case. A scope there are records of, but not set, has none.
+message ProductScopeGrpcModel{
+    string Name = 1;
+    repeated string Applications = 2;
+}
+
+// The default scope first - where the records no scope matches go - then the scopes in the
+// order they are matched, then the other ones there are records of
+message GetProductScopesResponse{
+    string DefaultScope = 1;
+    repeated ProductScopeGrpcModel Scopes = 2;
+}
+
 message ServerInfoGrpcResponse{
     string Version = 1;
     uint32 HoursToGc = 2;
@@ -162,6 +182,10 @@ service MyLogger {
 
 
     rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoGrpcResponse);
+
+    // The records of Write go to the scope its "scope" metadata names - by the product scopes
+    // without it
+    rpc GetProductScopes(google.protobuf.Empty) returns (GetProductScopesResponse);
 
     rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
  }

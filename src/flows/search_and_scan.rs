@@ -4,6 +4,7 @@ use crate::{app::AppContext, logs_storage::SearchDirection, repo::dto::LogItemDt
 
 pub async fn search_and_scan(
     app: &AppContext,
+    product_scope: &str,
     from_date: DateTimeAsMicroseconds,
     to_date: DateTimeAsMicroseconds,
     phrase: &str,
@@ -11,6 +12,7 @@ pub async fn search_and_scan(
 ) -> Vec<LogItemDto> {
     super::search_logs(
         app,
+        product_scope,
         from_date,
         to_date,
         None,

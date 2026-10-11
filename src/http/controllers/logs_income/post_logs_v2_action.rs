@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::contracts::*;
+use super::{contracts::*, get_scope};
 use my_http_server::{macros::http_route, HttpContext, HttpFailResult, HttpOkResult, HttpOutput};
 
 use crate::app::AppContext;
@@ -28,12 +28,12 @@ impl PostLogsV2Action {
 async fn handle_request(
     action: &PostLogsV2Action,
     input_data: PostJsonLogsV2InputData,
-    _ctx: &HttpContext,
+    ctx: &HttpContext,
 ) -> Result<HttpOkResult, HttpFailResult> {
     let log_events = input_data.parse_log_events()?;
 
     if log_events.len() > 0 {
-        crate::flows::post_items(&action.app, log_events).await;
+        crate::flows::post_items(&action.app, log_events, get_scope(ctx)).await;
     }
 
     return HttpOutput::Empty.into_ok_result(true).into();

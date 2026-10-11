@@ -1,8 +1,13 @@
 use std::sync::Arc;
 
-use crate::app::{AppContext, LogItem};
+use crate::{
+    app::{AppContext, LogItem},
+    product_scopes::to_scope_name,
+};
 
-pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
+/// `scope` is the product scope the writer names - the records go by the product scopes
+/// when it names none, or one which can not name a folder
+pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>, scope: Option<&str>) {
     let log_events = filter_events(app, log_events).await;
 
     let log_events = filter_single_ignore_events(app, log_events).await;
@@ -20,15 +25,12 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
         return;
     }
 
-    for log_event in log_events.iter() {
-        app.insights_repo.try_insert_values(&log_event.ctx).await;
-    }
-
     if let Some(elastic) = &app.elastic {
         elastic.logs_queue.add(log_events.clone()).await;
     }
 
-    let dropped = app.logs_storage.add_pending(log_events);
+    let scope = scope.and_then(to_scope_name);
+    let dropped = app.logs_storage.add_pending(log_events, scope.as_deref());
 
     if dropped > 0 {
         app.debug_console

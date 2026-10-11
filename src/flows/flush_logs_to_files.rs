@@ -8,11 +8,10 @@ pub async fn flush_logs_to_files(app: &AppContext, all: bool) {
         return;
     }
 
-    let hours_to_gc = app.settings_reader.get_hours_to_gc().await;
     let storage = app.logs_storage.clone();
 
     let messages = tokio::task::spawn_blocking(move || {
-        let mut messages = storage.write(ready, hours_to_gc);
+        let mut messages = storage.write(ready);
 
         // Before the process ends the key indexes are written whatever their time
         if all {

@@ -11,6 +11,7 @@ use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::{
     app::LogItem,
+    product_scopes::{ProductScopes, DEFAULT_PRODUCT_SCOPE},
     repo::{
         dto::{LogItemDto, LogLevelDto},
         DateHourKey,
@@ -18,6 +19,10 @@ use crate::{
 };
 
 use super::*;
+
+fn no_scopes() -> ProductScopes {
+    ProductScopes::new(DEFAULT_PRODUCT_SCOPE, &[])
+}
 
 fn indexed_keys() -> Vec<String> {
     vec!["Application".to_string()]
@@ -291,8 +296,8 @@ fn a_second_waits_in_memory_before_it_is_ready() {
     let now_micros = DateTimeAsMicroseconds::now().unix_microseconds;
     let mut pending = PendingLogs::default();
 
-    pending.add(vec![item(LogLevel::Error, now_micros, "billing", "one")], now, now_micros);
-    pending.add(vec![item(LogLevel::Debug, now_micros, "billing", "two")], now, now_micros);
+    pending.add(vec![item(LogLevel::Error, now_micros, "billing", "one")], now, now_micros, |_| DEFAULT_PRODUCT_SCOPE.to_string());
+    pending.add(vec![item(LogLevel::Debug, now_micros, "billing", "two")], now, now_micros, |_| DEFAULT_PRODUCT_SCOPE.to_string());
 
     assert!(pending.take_ready(now + Duration::from_secs(1), false).is_empty());
     assert_eq!(pending.len(), 2);
@@ -318,7 +323,7 @@ async fn write_pending(storage: &Arc<LogsStorage>) {
     let ready = storage.take_ready(true);
     let storage = storage.clone();
 
-    let messages = tokio::task::spawn_blocking(move || storage.write(ready, 24))
+    let messages = tokio::task::spawn_blocking(move || storage.write(ready))
         .await
         .unwrap();
 
@@ -330,7 +335,7 @@ async fn records_are_found_up_and_down() {
     use SearchDirection::{Down, Up};
 
     let dir = test_dir("search");
-    let storage = Arc::new(LogsStorage::new(&dir, None, Vec::new()));
+    let storage = Arc::new(LogsStorage::new(&dir, None, no_scopes()));
 
     let now = DateTimeAsMicroseconds::now().unix_microseconds;
     let start = now - 30 * 60 * MICROS_PER_SECOND;
@@ -358,9 +363,9 @@ async fn records_are_found_up_and_down() {
     let (late, first): (Vec<_>, Vec<_>) = items.iter().cloned().partition(|item| {
         item.timestamp.unix_microseconds % 3 == 0
     });
-    storage.add_pending(first);
+    storage.add_pending(first, None);
     write_pending(&storage).await;
-    storage.add_pending(late);
+    storage.add_pending(late, None);
     write_pending(&storage).await;
 
     let all_filter = SearchFilter::new(None, None, None);
@@ -374,25 +379,25 @@ async fn records_are_found_up_and_down() {
         found.iter().map(|item| item.moment.unix_microseconds).collect()
     };
 
-    assert_eq!(times(storage.search(from, to, &all_filter, 10_000, Down).await), descending);
-    assert_eq!(times(storage.search(from, to, &all_filter, 10_000, Up).await), ascending);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &all_filter, 10_000, Down).await), descending);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &all_filter, 10_000, Up).await), ascending);
 
     // The limit hit first
-    assert_eq!(times(storage.search(from, to, &all_filter, 10, Down).await), descending[..10]);
-    assert_eq!(times(storage.search(from, to, &all_filter, 10, Up).await), ascending[..10]);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &all_filter, 10, Down).await), descending[..10]);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &all_filter, 10, Up).await), ascending[..10]);
 
     // From the middle of the range, the limit hit long before its other end
     let middle = ascending.len() / 2;
-    let found = storage.search(from, ascending[middle], &all_filter, 25, Down).await;
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, from, ascending[middle], &all_filter, 25, Down).await;
     let expected: Vec<i64> = ascending[middle - 24..=middle].iter().rev().copied().collect();
     assert_eq!(times(found), expected);
-    let found = storage.search(ascending[middle], to, &all_filter, 25, Up).await;
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, ascending[middle], to, &all_filter, 25, Up).await;
     assert_eq!(times(found), ascending[middle..middle + 25]);
 
     // The end of the range hit first
     let fifth_from_end = ascending[ascending.len() - 5];
-    assert_eq!(storage.search(fifth_from_end, to, &all_filter, 100, Down).await.len(), 5);
-    assert_eq!(storage.search(from, ascending[4], &all_filter, 100, Up).await.len(), 5);
+    assert_eq!(storage.search(DEFAULT_PRODUCT_SCOPE, fifth_from_end, to, &all_filter, 100, Down).await.len(), 5);
+    assert_eq!(storage.search(DEFAULT_PRODUCT_SCOPE, from, ascending[4], &all_filter, 100, Up).await.len(), 5);
 
     // The key index finds the seconds of a rare application
     let rare = SearchFilter::new(
@@ -405,11 +410,11 @@ async fn records_are_found_up_and_down() {
         .filter(|item| item.ctx["Application"] == "Rare")
         .map(|item| item.timestamp.unix_microseconds)
         .collect();
-    let found = storage.search(from, to, &rare, 3, Down).await;
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &rare, 3, Down).await;
     let latest_rare: Vec<i64> = rare_times.iter().rev().take(3).copied().collect();
     assert_eq!(times(found), latest_rare);
-    assert_eq!(times(storage.search(from, to, &rare, 3, Up).await), rare_times[..3]);
-    assert_eq!(storage.search(from, to, &rare, 100, Down).await.len(), 5);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &rare, 3, Up).await), rare_times[..3]);
+    assert_eq!(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &rare, 100, Down).await.len(), 5);
 
     // A filter which leaves a quarter of the records, and a limit
     let errors = SearchFilter::new(Some(vec![LogLevelDto::Error]), None, None);
@@ -422,14 +427,14 @@ async fn records_are_found_up_and_down() {
         times.sort_unstable();
         times
     };
-    let found = storage.search(from, to, &errors, 10, Up).await;
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &errors, 10, Up).await;
     assert_eq!(times(found), error_times[..10]);
-    let found = storage.search(from, to, &errors, 10, Down).await;
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &errors, 10, Down).await;
     let latest_errors: Vec<i64> = error_times.iter().rev().take(10).copied().collect();
     assert_eq!(times(found), latest_errors);
 
     for direction in [Down, Up] {
-        let found = storage.search(from, to, &errors, 10_000, direction).await;
+        let found = storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &errors, 10_000, direction).await;
         assert_eq!(found.len(), 750);
         assert!(found.iter().all(|item| item.level == LogLevelDto::Error));
 
@@ -438,21 +443,21 @@ async fn records_are_found_up_and_down() {
             Some(BTreeMap::from([("application".to_string(), "BILLING".to_string())])),
             None,
         );
-        assert_eq!(storage.search(from, to, &billing, 10_000, direction).await.len(), 1000);
+        assert_eq!(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &billing, 10_000, direction).await.len(), 1000);
 
         let timeouts = SearchFilter::new(None, None, Some("TIMEOUT"));
-        assert_eq!(storage.search(from, to, &timeouts, 10_000, direction).await.len(), 300);
+        assert_eq!(storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &timeouts, 10_000, direction).await.len(), 300);
     }
 
     // A record waiting in memory is found as well
-    storage.add_pending(vec![item(LogLevel::FatalError, now - 1, "billing", "Just now")]);
-    let found = storage.search(from, to, &all_filter, 1, Down).await;
+    storage.add_pending(vec![item(LogLevel::FatalError, now - 1, "billing", "Just now")], None);
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, from, to, &all_filter, 1, Down).await;
     assert_eq!(found[0].message, "Just now");
     write_pending(&storage).await;
 
     // And everything is there once the files are opened again
-    let reopened = LogsStorage::new(&dir, None, Vec::new());
-    let found = reopened.search(from, to, &all_filter, 10_000, Up).await;
+    let reopened = LogsStorage::new(&dir, None, no_scopes());
+    let found = reopened.search(DEFAULT_PRODUCT_SCOPE, from, to, &all_filter, 10_000, Up).await;
     assert_eq!(found.len(), items.len() + 1);
 
     let mut counts: HashMap<String, usize> = HashMap::new();
@@ -469,7 +474,7 @@ async fn an_hour_which_is_read_finds_its_seconds_in_the_page_of_its_key_index() 
     use SearchDirection::{Down, Up};
 
     let dir = test_dir("read-hour");
-    let storage = Arc::new(LogsStorage::new(&dir, None, Vec::new()));
+    let storage = Arc::new(LogsStorage::new(&dir, None, no_scopes()));
 
     // Two hours ago: neither the current hour nor the one before
     let now = DateTimeAsMicroseconds::now().unix_microseconds;
@@ -489,10 +494,10 @@ async fn an_hour_which_is_read_finds_its_seconds_in_the_page_of_its_key_index() 
         items.push(item(LogLevel::Error, *timestamp, "Rare", "Rare one"));
     }
 
-    storage.add_pending(items);
+    storage.add_pending(items, None);
     write_pending(&storage).await;
 
-    let reopened = LogsStorage::new(&dir, None, Vec::new());
+    let reopened = LogsStorage::new(&dir, None, no_scopes());
     let (from, to) = (hour_start, hour_start + 3600 * MICROS_PER_SECOND - 1);
 
     let rare = SearchFilter::new(
@@ -504,15 +509,120 @@ async fn an_hour_which_is_read_finds_its_seconds_in_the_page_of_its_key_index() 
         found.iter().map(|item| item.moment.unix_microseconds).collect()
     };
 
-    assert_eq!(times(reopened.search(from, to, &rare, 2, Down).await), [rare_times[2], rare_times[1]]);
-    assert_eq!(times(reopened.search(from, to, &rare, 2, Up).await), rare_times[..2]);
+    assert_eq!(times(reopened.search(DEFAULT_PRODUCT_SCOPE, from, to, &rare, 2, Down).await), [rare_times[2], rare_times[1]]);
+    assert_eq!(times(reopened.search(DEFAULT_PRODUCT_SCOPE, from, to, &rare, 2, Up).await), rare_times[..2]);
 
     let billing = SearchFilter::new(
         None,
         Some(BTreeMap::from([("application".to_string(), "Billing".to_string())])),
         None,
     );
-    assert_eq!(reopened.search(from, to, &billing, 10_000, Down).await.len(), 1000);
+    assert_eq!(reopened.search(DEFAULT_PRODUCT_SCOPE, from, to, &billing, 10_000, Down).await.len(), 1000);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn records_go_to_their_product_scopes() {
+    use crate::repo::dto::ProductScopeDto;
+
+    let dir = test_dir("scopes");
+    let scopes = ProductScopes::new(
+        DEFAULT_PRODUCT_SCOPE,
+        &[ProductScopeDto {
+            name: "trading".to_string(),
+            applications: vec!["trading-.*".to_string()],
+        }],
+    );
+    let storage = Arc::new(LogsStorage::new(&dir, None, scopes));
+
+    let now = DateTimeAsMicroseconds::now().unix_microseconds;
+    let (from, to) = (now - 60 * MICROS_PER_SECOND, now);
+
+    storage.add_pending(
+        vec![
+            item(LogLevel::Error, now - 3 * MICROS_PER_SECOND, "Trading-Api", "Trading"),
+            item(LogLevel::Debug, now - 2 * MICROS_PER_SECOND, "billing", "Billing"),
+        ],
+        None,
+    );
+    // The writer names the scope: the product scopes are not asked
+    storage.add_pending(
+        vec![item(LogLevel::Error, now - MICROS_PER_SECOND, "trading-feed", "Ops")],
+        Some("ops"),
+    );
+
+    let messages = |found: Vec<LogItemDto>| -> Vec<String> {
+        found.into_iter().map(|item| item.message).collect()
+    };
+
+    // Waiting in memory
+    let search = |scope: &'static str| {
+        let storage = storage.clone();
+        async move {
+            let all_filter = SearchFilter::new(None, None, None);
+            storage
+                .search(scope, from, to, &all_filter, 100, SearchDirection::Down)
+                .await
+        }
+    };
+    assert_eq!(messages(search("trading").await), ["Trading"]);
+    assert_eq!(messages(search("ops").await), ["Ops"]);
+
+    write_pending(&storage).await;
+
+    assert_eq!(messages(search("trading").await), ["Trading"]);
+    assert_eq!(messages(search(DEFAULT_PRODUCT_SCOPE).await), ["Billing"]);
+    assert_eq!(messages(search("ops").await), ["Ops"]);
+    assert!(search("nothing").await.is_empty());
+    assert!(search("../logs").await.is_empty());
+
+    assert!(dir.join("logs").join("trading").is_dir());
+    assert!(dir.join("debug-info").join(DEFAULT_PRODUCT_SCOPE).is_dir());
+
+    let with_records = storage.scopes_with_records();
+    let names: Vec<&str> = with_records.iter().map(String::as_str).collect();
+    assert_eq!(names, [DEFAULT_PRODUCT_SCOPE, "ops", "trading"]);
+
+    // Another default scope: the records which come from then on go to it
+    storage.set_product_scopes(ProductScopes::new("main", &[]));
+    storage.add_pending(vec![item(LogLevel::Error, now, "billing", "Main")], None);
+    write_pending(&storage).await;
+
+    assert_eq!(messages(search("main").await), ["Main"]);
+    assert_eq!(messages(search(DEFAULT_PRODUCT_SCOPE).await), ["Billing"]);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn an_hour_not_kept_as_long_as_its_upload_takes_is_not_uploaded() {
+    let dir = test_dir("short-gc");
+    let storage = LogsStorage::new(&dir, None, no_scopes());
+
+    // Its time on the local disk is over
+    let now = DateTimeAsMicroseconds::now();
+    let hour = DateHourKey::new(DateTimeAsMicroseconds::new(
+        now.unix_microseconds - 4 * 3600 * MICROS_PER_SECOND,
+    ));
+
+    let scope_dir = dir.join("logs").join(DEFAULT_PRODUCT_SCOPE);
+    std::fs::create_dir_all(&scope_dir).unwrap();
+    let mut file = HourFile::open(&scope_dir, hour, &indexed_keys(), true).unwrap();
+    let mut random = Random(7);
+    let timestamp = hour.hour_start().unix_microseconds + MICROS_PER_SECOND;
+    file.write_second(1, vec![record(&mut random, timestamp)]).unwrap();
+    file.flush(true).unwrap();
+    drop(file);
+
+    let upload = |hours_to_gc| storage.hours_to_upload(now, hours_to_gc);
+    assert_eq!(upload(24), [(DEFAULT_PRODUCT_SCOPE.to_string(), hour)]);
+    assert!(upload(3).is_empty());
+    assert!(upload(0).is_empty());
+
+    // Without S3 it is deleted whatever hours_to_gc is
+    assert_eq!(storage.gc(now, 24).len(), 1);
+    assert!(upload(24).is_empty());
 
     std::fs::remove_dir_all(&dir).unwrap();
 }

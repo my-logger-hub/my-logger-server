@@ -26,7 +26,7 @@ impl MyTimerTick for GcTimer {
             hourly_statistics.gc();
         }
 
-        let hours_to_gc = self.app.settings_reader.get_hours_to_gc().await;
+        let hours_to_gc = self.app.settings_repo.get_hours_to_gc().await;
         let storage = self.app.logs_storage.clone();
 
         let messages = tokio::task::spawn_blocking(move || {

@@ -10,8 +10,8 @@ Logs are kept in plain files, one pair of files per hour: no search engine and n
 
 | Stream | Levels | Folder | Kept |
 |---|---|---|---|
-| main | Warning, Error, FatalError | `<LogsDbPath>/logs/` | on the local disk until 2 hours after the hour ends, then uploaded to S3 and kept there for `hours_to_gc`; without S3, locally for `hours_to_gc` |
-| debug-info | Debug, Info | `<LogsDbPath>/debug-info/` | deleted 2 hours after the hour ends |
+| main | Warning, Error, FatalError | `<logs_db_path>/logs/<scope>/` | on the local disk until 2 hours after the hour ends, then uploaded to S3 and kept there for `hours_to_gc`; without S3, deleted then |
+| debug-info | Debug, Info | `<logs_db_path>/debug-info/<scope>/` | deleted 2 hours after the hour ends |
 
 An hour is its data files `YYYYMMDDHH.data00`, `.data01` … `.dataFF`, `YYYYMMDDHH.index` and `YYYYMMDDHH.index-by-key`. A data file takes new frames until it is 3 GiB long, then the next one does — a new frame of an insert into an older file too, so the files never grow past that by more than a frame.
 
@@ -19,7 +19,7 @@ An hour is its data files `YYYYMMDDHH.data00`, `.data01` … `.dataFF`, `YYYYMMD
 
 **`.index`** is 3600 cells `file u8 · offset u32 · count u32`, one per second of the hour: the data file of the first entry of the second, the entry's offset in it, and how many records the second has. Then one byte: 0 when the cells agree with the data file. A flush sets it to 1 before it writes the frames and back to 0 together with the cells; an index found at 1 is rebuilt by walking the chain.
 
-**`.index-by-key`** — for the level, the process, `Application`, `Version` and the `InsightsKeys` of the settings: how many records of each second have each value (lowercase). A directory first — every key and value, and where its seconds are — then, packed, the seconds each value is in: `varint(step from the second before) · varint(records)`, 2–3 bytes a second. A key with more than 1000 values in an hour is not indexed in it. For the current and the previous hour it is kept in memory whole, as the writes build it, and written at most every 5 seconds, when the hour is sealed and when the process stops; one which does not count the records the index counts is rebuilt from the data file. Of an older hour — on the local disk or in S3 alike — only the page of its keys and values is read: one 64 KiB read from its start, its header telling whether the page goes on past it; what the read brought in past the page is kept, so an index shorter than one read is read once. The seconds of a value not brought in yet are read when a filter asks for it — blocks less than 64 KiB apart in one read, always forward — and kept.
+**`.index-by-key`** — for the level, the process, `Application` and `Version`: how many records of each second have each value (lowercase). A directory first — every key and value, and where its seconds are — then, packed, the seconds each value is in: `varint(step from the second before) · varint(records)`, 2–3 bytes a second. A key with more than 1000 values in an hour is not indexed in it. For the current and the previous hour it is kept in memory whole, as the writes build it, and written at most every 5 seconds, when the hour is sealed and when the process stops; one which does not count the records the index counts is rebuilt from the data file. Of an older hour — on the local disk or in S3 alike — only the page of its keys and values is read: one 64 KiB read from its start, its header telling whether the page goes on past it; what the read brought in past the page is kept, so an index shorter than one read is read once. The seconds of a value not brought in yet are read when a filter asks for it — blocks less than 64 KiB apart in one read, always forward — and kept.
 
 ### Writing
 
@@ -37,20 +37,31 @@ A search goes one of two ways, both stopping at the other end of the range or at
 
 ### S3
 
-With `S3Settings` set, a main hour 2 hours past its end is sealed and copied for the upload: the data files into frames which follow one another, each filled before the next one starts and over to the next file after 3 GiB, so a read goes forward from the cell of its second with no jump; the index pointing into them; the key index whole, its page first. They are uploaded as `<prefix>/YYYYMMDDHH.data00` … , `.index-by-key`, `.index` — the data files first, the index last; the prefix is `logs` unless the settings give one — and deleted locally. Searches read such hours from S3. Every 10 minutes the hours older than `hours_to_gc` are deleted from S3.
+With `s3` set, a main hour 2 hours past its end is sealed and copied for the upload: the data files into frames which follow one another, each filled before the next one starts and over to the next file after 3 GiB, so a read goes forward from the cell of its second with no jump; the index pointing into them; the key index whole, its page first. They are uploaded as `<prefix>/<scope>/YYYYMMDDHH.data00` … , `.index-by-key`, `.index` — the data files first, the index last; the prefix is `logs` unless the settings give one — and deleted locally. Searches read such hours from S3. Every 10 minutes the hours older than `hours_to_gc` are deleted from S3.
 
-## MCP server (read-only for AI)
+### Product scopes
+
+Records are kept and searched by product scope. A record goes to the scope its writer names in the `scope` header (HTTP `POST /api/v2` and `/api/events/raw`) or the `scope` metadata (gRPC `Write`), for the whole batch. Without it, the record goes to the first scope with a regular expression matching its `Application` whole, ignoring case, in the order the scopes are set. Otherwise, or with no `Application`, it goes to the default scope. A scope name is `a-z`, `0-9`, `-` and `_`, at most 64 characters. A header which can not name a scope is ignored.
+
+The scopes and the default scope — `default` until another one is set — are managed through MCP and kept in `settings.json` (see Settings).
+
+A change applies to the records which come after it; the ones written stay in their scope and are searched by its name. A search goes over one scope: `ProductScope` of `Read`, `ScanAndSearch`, `SearchUp`, `SearchDown` and `product_scope` of the MCP `search_logs` — the default scope when it is not given. `GetProductScopes` lists the default scope first, then the scopes as they are set with their regular expressions, then the other scopes there are records of. Statistics, ignore events and Telegram are shared by all scopes.
+
+## MCP server
 
 The server exposes an MCP endpoint at **`/mcp`** on the main HTTP port (Streamable HTTP transport, JSON-RPC 2.0 + SSE). Implemented via `mcp-server-middleware` on top of `my-http-server` ([src/http/start_up.rs](src/http/start_up.rs), [src/mcp/](src/mcp/)).
 
-Goal: let AI assistants read logs. Write/admin operations are **not exposed** through MCP — the endpoint is strictly read-only.
+Goal: let AI assistants read logs, and manage the product scopes and ignore rules.
 
-### One registered tool: `search_logs`
+Product scopes: `get_product_scopes`, `set_product_scope` (`name`, `applications` — the regular expressions; creates the scope last or replaces the one of the same name where it is), `delete_product_scope` (`name`), `set_default_product_scope` (`name`). Retention in S3: `get_hours_to_gc`, `set_hours_to_gc` (`hours_to_gc`).
+
+### `search_logs`
 
 Combines every filter shape in a single call. All parameters are optional except the time-range pair.
 
 | Parameter         | Type            | Purpose                                                                       |
 |-------------------|-----------------|-------------------------------------------------------------------------------|
+| `product_scope`   | `string`        | The scope to search. The default scope when it is not given.                 |
 | `phrase`          | `string`        | Case-insensitive substring of the message, the process or a context value.   |
 | `last_minutes`    | `integer`       | If > 0, range becomes `[now − N min..now]`. Overrides `from_time`/`to_time`.  |
 | `from_time`       | `integer` (us)  | Used only when `last_minutes` is absent. Must be paired with `to_time`.       |
@@ -71,24 +82,24 @@ Combines every filter shape in a single call. All parameters are optional except
 | "find timeout in logs for the last 2 hours"          | `{ "last_minutes": 120, "phrase": "timeout" }`                              |
 | "billing v1.4.2 errors over last 24h"                | `{ "last_minutes": 1440, "levels": ["error"], "context_filters": ["Application=billing", "Version=1.4.2"] }` |
 
-What AI **cannot** do via MCP: write logs, modify ignore-events, trigger GC, read dashboard statistics, or change settings. Search only.
+What AI **cannot** do via MCP: write logs or trigger GC.
 
 ## Settings
 
+The YAML settings (`~/.my-logger-server`) hold the infrastructure only — paths, connections, credentials:
+
 ```yaml
-EnvName: env-name
-LogsDbPath: /root/db
-hours_to_gc: 6
-IgnoreEvents:
-- level: Info
-  application: app-name
-  marker: TextEntry
-TelegramSettings:
+logs_db_path: /root/db
+env_name: env-name # shown in the Telegram messages
+telegram_settings: # optional: no Telegram without it
   api_key: string
-  chat_id: string
+  chat_id: number
   message_thread_id: number
-  env_info: string
-S3Settings:
+elastic: # optional: the records are copied to Elastic with it
+  url: string
+  esecure: string
+  env_source: string
+s3: # optional
   endpoint: https://fsn1.your-objectstorage.com
   region: fsn1
   access_key: string
@@ -97,6 +108,21 @@ S3Settings:
   prefix: string # optional, logs when not set
 ```
 
-`LogsDbPath` — the root directory: `logs/` and `debug-info/` with the hour files, `settings.json` (ignore-events) and `statistics.json` (hourly aggregates).
+`logs_db_path` — the root directory: `logs/<scope>/` and `debug-info/<scope>/` with the hour files, `settings.json`, `statistics.json` (hourly aggregates) and `one-time-skip.yaml` (ignore single events).
 
-`S3Settings` is optional; without it the main hours stay on the local disk for `hours_to_gc`.
+`s3` is optional; without it the main hours are deleted 2 hours after they end, like the debug-info ones.
+
+Everything else is set through MCP and kept in `<logs_db_path>/settings.json`:
+
+```json
+{
+  "ignore_events": [{ "level": "Error", "application": "billing", "marker": "*" }],
+  "default_product_scope": "default",
+  "hours_to_gc": 168,
+  "product_scopes": [{ "name": "trading", "applications": ["trading-.*", "quotes"] }]
+}
+```
+
+- `ignore_events` — `get_ignore_rules`, `add_ignore_rule`, `delete_ignore_rule`;
+- `product_scopes`, `default_product_scope` — `get_product_scopes`, `set_product_scope`, `delete_product_scope`, `set_default_product_scope`;
+- `hours_to_gc` — how long the main hours are kept in S3, a week until it is set; with 3 or less nothing goes to S3 and the main hours are deleted 2 hours after they end — `get_hours_to_gc`, `set_hours_to_gc`.

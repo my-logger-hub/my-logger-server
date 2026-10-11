@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicI64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
     },
     time::Instant,
 };
@@ -12,6 +12,7 @@ use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 use crate::{
     app::LogItem,
+    product_scopes::{is_valid_scope_name, ProductScopes},
     repo::{dto::LogItemDto, DateHourKey},
 };
 
@@ -22,8 +23,8 @@ use super::{
     MAX_DATA_FILES, MICROS_PER_SECOND,
 };
 
-/// Hours stay on the local disk this long after they end. Then Debug and Info are
-/// deleted, and the other levels are uploaded to S3 when it is set up.
+/// Hours stay on the local disk this long after they end. Then the Warning, Error and
+/// FatalError hours are uploaded to S3 when it is set up; the other hours are deleted.
 pub const LOCAL_HOURS: i64 = 2;
 
 const HOUR_MICROS: i64 = 3600 * MICROS_PER_SECOND;
@@ -40,6 +41,9 @@ const S3_READ_LEN: u64 = 1024 * 1024;
 
 /// A search asking for no limit gets this many records at most
 const DEFAULT_LIMIT: usize = 1000;
+
+/// An hour of a stream of a product scope
+type HourKey = (LogsStream, String, DateHourKey);
 
 pub struct HourHandle {
     pub file: Arc<tokio::sync::RwLock<HourFile>>,
@@ -187,21 +191,25 @@ pub struct StorageStats {
     pub cached_frames: usize,
 }
 
-/// The logs: by hour, `{LogsDbPath}/logs` for Warning, Error and FatalError,
-/// `{LogsDbPath}/debug-info` for Debug and Info. What came in the last seconds waits in
-/// memory before it is written.
+/// The logs: by product scope and hour, `{LogsDbPath}/logs/{scope}` for Warning, Error and
+/// FatalError, `{LogsDbPath}/debug-info/{scope}` for Debug and Info. What came in the last
+/// seconds waits in memory before it is written.
 pub struct LogsStorage {
     root: PathBuf,
-    hours: Mutex<BTreeMap<(LogsStream, DateHourKey), Arc<HourHandle>>>,
+    hours: Mutex<BTreeMap<HourKey, Arc<HourHandle>>>,
     pending: Mutex<PendingLogs>,
     s3: Option<Arc<S3Archive>>,
     /// The context keys a new hour counts the values of, besides the level and the process
     indexed_keys: Vec<String>,
+    product_scopes: RwLock<Arc<ProductScopes>>,
 }
 
 impl LogsStorage {
-    /// `insights_keys` are indexed besides `Application` and `Version`
-    pub fn new(root: impl Into<PathBuf>, s3: Option<S3Archive>, insights_keys: Vec<String>) -> Self {
+    pub fn new(
+        root: impl Into<PathBuf>,
+        s3: Option<S3Archive>,
+        product_scopes: ProductScopes,
+    ) -> Self {
         let root = root.into();
 
         for stream in LogsStream::ALL {
@@ -218,8 +226,8 @@ impl LogsStorage {
             indexed_keys: ["Application", "Version"]
                 .into_iter()
                 .map(str::to_string)
-                .chain(insights_keys)
                 .collect(),
+            product_scopes: RwLock::new(Arc::new(product_scopes)),
         }
     }
 
@@ -227,17 +235,44 @@ impl LogsStorage {
         self.s3.is_some()
     }
 
-    fn dir(&self, stream: LogsStream) -> PathBuf {
-        self.root.join(stream.dir_name())
+    pub fn product_scopes(&self) -> Arc<ProductScopes> {
+        self.product_scopes.read().unwrap().clone()
     }
 
-    /// Returns how many records were dropped to keep the buffer bounded
-    pub fn add_pending(&self, items: Vec<Arc<LogItem>>) -> usize {
+    /// The records which come from now on go to these scopes; the written ones stay where
+    /// they are
+    pub fn set_product_scopes(&self, product_scopes: ProductScopes) {
+        *self.product_scopes.write().unwrap() = Arc::new(product_scopes);
+    }
+
+    fn dir(&self, stream: LogsStream, scope: &str) -> PathBuf {
+        self.root.join(stream.dir_name()).join(scope)
+    }
+
+    /// The records go to `scope` - the one the writer names - or, when it names none, by
+    /// the product scopes. Returns how many records were dropped to keep the buffer bounded.
+    pub fn add_pending(&self, items: Vec<Arc<LogItem>>, scope: Option<&str>) -> usize {
+        let scopes = self.product_scopes();
+
         self.pending.lock().unwrap().add(
             items,
             Instant::now(),
             DateTimeAsMicroseconds::now().unix_microseconds,
+            |item| match scope {
+                Some(scope) => scope.to_string(),
+                None => scopes
+                    .scope_of(item.ctx.get("Application").map(String::as_str))
+                    .to_string(),
+            },
         )
+    }
+
+    /// The scopes there are folders of: the ones the records went to, set or not
+    pub fn scopes_with_records(&self) -> BTreeSet<String> {
+        self.local_scopes(LogsStream::Main)
+            .into_iter()
+            .chain(self.local_scopes(LogsStream::DebugInfo))
+            .collect()
     }
 
     /// The seconds which have waited long enough - or all of them
@@ -247,26 +282,26 @@ impl LogsStorage {
 
     /// Writes the seconds: each hour under its write lock, and flushed before it is let
     /// go. Returns what went wrong.
-    pub fn write(&self, buckets: Vec<ReadyBucket>, hours_to_gc: u64) -> Vec<String> {
+    pub fn write(&self, buckets: Vec<ReadyBucket>) -> Vec<String> {
         let now = DateTimeAsMicroseconds::now().unix_microseconds;
         let mut messages = Vec::new();
 
-        let mut by_hour: BTreeMap<(LogsStream, DateHourKey), Vec<ReadyBucket>> = BTreeMap::new();
+        let mut by_hour: BTreeMap<HourKey, Vec<ReadyBucket>> = BTreeMap::new();
 
         for bucket in buckets {
             let hour = DateHourKey::new(DateTimeAsMicroseconds::new(
                 bucket.second * MICROS_PER_SECOND,
             ));
             by_hour
-                .entry((bucket.stream, hour))
+                .entry((bucket.stream, bucket.scope.clone(), hour))
                 .or_default()
                 .push(bucket);
         }
 
-        for ((stream, hour), buckets) in by_hour {
-            let name = format!("{}/{}", stream.dir_name(), hour.get_value());
+        for ((stream, scope, hour), buckets) in by_hour {
+            let name = hour_name(stream, &scope, hour);
 
-            if !self.accepts(stream, hour, now, hours_to_gc) {
+            if local_time_is_over(hour, now) {
                 let records: usize = buckets.iter().map(|bucket| bucket.records.len()).sum();
                 messages.push(format!(
                     "{} records of {} are dropped: the hour is not kept on the local disk any more",
@@ -275,7 +310,7 @@ impl LogsStorage {
                 continue;
             }
 
-            let handle = match self.get_hour(stream, hour, true, now) {
+            let handle = match self.get_hour(stream, &scope, hour, true, now) {
                 Ok(handle) => handle.unwrap(),
                 Err(err) => {
                     messages.push(format!("{} does not open: {}", name, err));
@@ -314,32 +349,25 @@ impl LogsStorage {
         messages
     }
 
-    /// Whether the hour is still written into: not once it is uploaded, deleted, or about
-    /// to be
-    fn accepts(&self, stream: LogsStream, hour: DateHourKey, now: i64, hours_to_gc: u64) -> bool {
-        match stream {
-            LogsStream::Main if self.s3.is_none() => !main_is_expired(hour, now, hours_to_gc),
-            LogsStream::Main | LogsStream::DebugInfo => !local_time_is_over(hour, now),
-        }
-    }
-
     /// The hour, opened when it is not yet. Without `create` an hour with no data file is
     /// `None`.
     fn get_hour(
         &self,
         stream: LogsStream,
+        scope: &str,
         hour: DateHourKey,
         create: bool,
         now: i64,
     ) -> std::io::Result<Option<Arc<HourHandle>>> {
+        let key = (stream, scope.to_string(), hour);
         let mut hours = self.hours.lock().unwrap();
 
-        if let Some(handle) = hours.get(&(stream, hour)) {
+        if let Some(handle) = hours.get(&key) {
             handle.last_access.store(now, Ordering::Relaxed);
             return Ok(Some(handle.clone()));
         }
 
-        let dir = self.dir(stream);
+        let dir = self.dir(stream, scope);
 
         if !create && !dir.join(data_file_name(hour, 0)).exists() {
             return Ok(None);
@@ -353,30 +381,36 @@ impl LogsStorage {
             HourFile::open(&dir, hour, &self.indexed_keys, full_key_index)?,
             now,
         ));
-        hours.insert((stream, hour), handle.clone());
+        hours.insert(key, handle.clone());
 
         Ok(Some(handle))
     }
 
-    /// The records of `from ..= to` which match, at most `limit` of them: from `from` up,
-    /// the oldest first, or from `to` down, the latest first.
+    /// The records of the product scope in `from ..= to` which match, at most `limit` of
+    /// them: from `from` up, the oldest first, or from `to` down, the latest first. A scope
+    /// which can not name a folder has none.
     pub async fn search(
         &self,
+        scope: &str,
         from: i64,
         to: i64,
         filter: &SearchFilter,
         limit: usize,
         direction: SearchDirection,
     ) -> Vec<LogItemDto> {
+        if !is_valid_scope_name(scope) {
+            return Vec::new();
+        }
+
         let limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
 
         let mut result = match direction {
-            SearchDirection::Up => self.search_up(from, to, filter, limit).await,
-            SearchDirection::Down => self.search_down(from, to, filter, limit).await,
+            SearchDirection::Up => self.search_up(scope, from, to, filter, limit).await,
+            SearchDirection::Down => self.search_down(scope, from, to, filter, limit).await,
         };
 
         // What waits in memory falls into its place among the records of the files
-        result.extend(self.pending.lock().unwrap().search(from, to, filter));
+        result.extend(self.pending.lock().unwrap().search(scope, from, to, filter));
 
         match direction {
             SearchDirection::Up => result.sort_by_key(|item| item.moment.unix_microseconds),
@@ -396,6 +430,7 @@ impl LogsStorage {
     /// found is read to its end: its blocks are not in time order between themselves.
     async fn search_up(
         &self,
+        scope: &str,
         from: i64,
         to: i64,
         filter: &SearchFilter,
@@ -409,7 +444,7 @@ impl LogsStorage {
                 break;
             }
 
-            let hour_to_read = self.open_for_reading(hour, filter, now).await;
+            let hour_to_read = self.open_for_reading(scope, hour, filter, now).await;
 
             if hour_to_read.sources.is_empty() {
                 continue;
@@ -492,6 +527,7 @@ impl LogsStorage {
     /// matched.
     async fn search_down(
         &self,
+        scope: &str,
         from: i64,
         to: i64,
         filter: &SearchFilter,
@@ -505,7 +541,7 @@ impl LogsStorage {
                 break;
             }
 
-            let hour_to_read = self.open_for_reading(hour, filter, now).await;
+            let hour_to_read = self.open_for_reading(scope, hour, filter, now).await;
 
             if hour_to_read.sources.is_empty() {
                 continue;
@@ -565,6 +601,7 @@ impl LogsStorage {
     /// into the hour wait, or the hour in S3
     async fn open_for_reading(
         &self,
+        scope: &str,
         hour: DateHourKey,
         filter: &SearchFilter,
         now: i64,
@@ -579,7 +616,7 @@ impl LogsStorage {
                 continue;
             }
 
-            match self.get_hour(stream, hour, false, now) {
+            match self.get_hour(stream, scope, hour, false, now) {
                 Ok(Some(handle)) => {
                     let file = handle.file.clone().read_owned().await;
 
@@ -595,19 +632,20 @@ impl LogsStorage {
                 }
                 Ok(None) => {
                     if let (LogsStream::Main, Some(s3)) = (stream, &self.s3) {
-                        match S3Archive::get_indexes(s3, hour).await {
+                        match S3Archive::get_indexes(s3, scope, hour).await {
                             Ok(Some((cells, directory))) => {
                                 let key_index = HourKeyIndex::Directory {
                                     directory,
                                     source: DataSource::S3 {
                                         archive: s3.clone(),
-                                        file_name: key_index_file_name(hour),
+                                        file_name: scoped_name(scope, key_index_file_name(hour)),
                                     },
                                 };
 
                                 result.sources.push(HourSource {
                                     data: DataFiles::S3 {
                                         archive: s3.clone(),
+                                        scope: scope.to_string(),
                                         hour,
                                     },
                                     cells,
@@ -619,12 +657,7 @@ impl LogsStorage {
                         }
                     }
                 }
-                Err(err) => println!(
-                    "{}/{} does not open: {}",
-                    stream.dir_name(),
-                    hour.get_value(),
-                    err
-                ),
+                Err(err) => println!("{} does not open: {}", hour_name(stream, scope, hour), err),
             }
         }
 
@@ -638,22 +671,27 @@ impl LogsStorage {
         let mut messages = Vec::new();
 
         for stream in LogsStream::ALL {
-            for hour in self.local_hours(stream) {
-                let expired = match stream {
-                    LogsStream::DebugInfo => local_time_is_over(hour, now),
-                    // With S3 they are uploaded long before - unless the uploads fail as long
-                    LogsStream::Main => main_is_expired(hour, now, hours_to_gc),
-                };
+            for scope in self.local_scopes(stream) {
+                for hour in self.local_hours(stream, &scope) {
+                    // With S3 the Main hours are uploaded long before - unless the uploads
+                    // fail as long, or they are not kept as long as it takes to upload them
+                    let expired = match stream {
+                        LogsStream::Main if self.s3.is_some() => {
+                            local_time_is_over(hour, now) && main_is_expired(hour, now, hours_to_gc)
+                        }
+                        LogsStream::Main | LogsStream::DebugInfo => local_time_is_over(hour, now),
+                    };
 
-                if !expired {
-                    continue;
-                }
+                    if !expired {
+                        continue;
+                    }
 
-                let name = format!("{}/{}", stream.dir_name(), hour.get_value());
+                    let name = hour_name(stream, &scope, hour);
 
-                match self.delete_local(stream, hour) {
-                    Ok(()) => messages.push(format!("GC: {} is deleted", name)),
-                    Err(err) => messages.push(format!("GC: {} is not deleted: {}", name, err)),
+                    match self.delete_local(stream, &scope, hour) {
+                        Ok(()) => messages.push(format!("GC: {} is deleted", name)),
+                        Err(err) => messages.push(format!("GC: {} is not deleted: {}", name, err)),
+                    }
                 }
             }
         }
@@ -685,11 +723,25 @@ impl LogsStorage {
         messages
     }
 
-    /// The hours the stream has data files of
-    fn local_hours(&self, stream: LogsStream) -> BTreeSet<DateHourKey> {
+    /// The product scopes the stream has folders of
+    fn local_scopes(&self, stream: LogsStream) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(self.root.join(stream.dir_name())) else {
+            return Vec::new();
+        };
+
+        entries
+            .flatten()
+            .filter(|entry| entry.path().is_dir())
+            .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
+            .filter(|name| is_valid_scope_name(name))
+            .collect()
+    }
+
+    /// The hours the stream of the scope has data files of
+    fn local_hours(&self, stream: LogsStream, scope: &str) -> BTreeSet<DateHourKey> {
         let mut result = BTreeSet::new();
 
-        let Ok(entries) = std::fs::read_dir(self.dir(stream)) else {
+        let Ok(entries) = std::fs::read_dir(self.dir(stream, scope)) else {
             return result;
         };
 
@@ -709,13 +761,10 @@ impl LogsStorage {
     }
 
     fn upload_copies(&self) -> Vec<PathBuf> {
-        let Ok(entries) = std::fs::read_dir(self.dir(LogsStream::Main)) else {
-            return Vec::new();
-        };
-
-        entries
-            .flatten()
-            .map(|entry| entry.path())
+        self.local_scopes(LogsStream::Main)
+            .into_iter()
+            .filter_map(|scope| std::fs::read_dir(self.dir(LogsStream::Main, &scope)).ok())
+            .flat_map(|entries| entries.flatten().map(|entry| entry.path()))
             .filter(|path| path.extension().map_or(false, |extension| extension == "upload"))
             .collect()
     }
@@ -723,22 +772,21 @@ impl LogsStorage {
     /// Writes the key indexes of the open hours which are changed - when it is time, or
     /// all of them. Returns what went wrong.
     pub fn persist_key_indexes(&self, force: bool) -> Vec<String> {
-        let handles: Vec<((LogsStream, DateHourKey), Arc<HourHandle>)> = self
+        let handles: Vec<(HourKey, Arc<HourHandle>)> = self
             .hours
             .lock()
             .unwrap()
             .iter()
-            .map(|(key, handle)| (*key, handle.clone()))
+            .map(|(key, handle)| (key.clone(), handle.clone()))
             .collect();
 
         let mut messages = Vec::new();
 
-        for ((stream, hour), handle) in handles {
+        for ((stream, scope, hour), handle) in handles {
             if let Err(err) = handle.file.blocking_write().flush(force) {
                 messages.push(format!(
-                    "{}/{} is not flushed: {}",
-                    stream.dir_name(),
-                    hour.get_value(),
+                    "{} is not flushed: {}",
+                    hour_name(stream, &scope, hour),
                     err
                 ));
             }
@@ -747,13 +795,17 @@ impl LogsStorage {
         messages
     }
 
-    fn delete_local(&self, stream: LogsStream, hour: DateHourKey) -> std::io::Result<()> {
-        let handle = self.hours.lock().unwrap().remove(&(stream, hour));
+    fn delete_local(&self, stream: LogsStream, scope: &str, hour: DateHourKey) -> std::io::Result<()> {
+        let handle = self
+            .hours
+            .lock()
+            .unwrap()
+            .remove(&(stream, scope.to_string(), hour));
 
         // A read or a write which holds the hour ends first
         let _file = handle.as_ref().map(|handle| handle.file.blocking_write());
 
-        let dir = self.dir(stream);
+        let dir = self.dir(stream, scope);
 
         for file in 0..MAX_DATA_FILES {
             let path = dir.join(data_file_name(hour, file as u8));
@@ -775,48 +827,62 @@ impl LogsStorage {
         let current = DateHourKey::new(DateTimeAsMicroseconds::new(now));
         let previous = DateHourKey::new(DateTimeAsMicroseconds::new(now - HOUR_MICROS));
 
-        self.hours.lock().unwrap().retain(|(_, hour), handle| {
+        self.hours.lock().unwrap().retain(|(_, _, hour), handle| {
             *hour == current
                 || *hour == previous
                 || now - handle.last_access.load(Ordering::Relaxed) < IDLE_HOUR_MICROS
         });
     }
 
-    /// The Main hours whose time on the local disk is over and which are not expired: to
-    /// be uploaded
-    pub fn hours_to_upload(&self, now: DateTimeAsMicroseconds, hours_to_gc: u64) -> Vec<DateHourKey> {
+    /// The Main hours of every product scope whose time on the local disk is over and which
+    /// are not expired: to be uploaded. With `hours_to_gc` of 3 or less none is - they are
+    /// deleted instead.
+    pub fn hours_to_upload(
+        &self,
+        now: DateTimeAsMicroseconds,
+        hours_to_gc: u64,
+    ) -> Vec<(String, DateHourKey)> {
         let now = now.unix_microseconds;
 
-        self.local_hours(LogsStream::Main)
+        self.local_scopes(LogsStream::Main)
             .into_iter()
-            .filter(|hour| local_time_is_over(*hour, now) && !main_is_expired(*hour, now, hours_to_gc))
+            .flat_map(|scope| {
+                self.local_hours(LogsStream::Main, &scope)
+                    .into_iter()
+                    .filter(|hour| {
+                        local_time_is_over(*hour, now) && !main_is_expired(*hour, now, hours_to_gc)
+                    })
+                    .map(move |hour| (scope.clone(), hour))
+                    .collect::<Vec<_>>()
+            })
             .collect()
     }
 
     /// Seals the hour - nothing is written into it any more - copies its chain into files
     /// whose frames follow one another, uploads them and deletes the local files. A failed
     /// upload unseals the hour: the next round tries it again.
-    pub async fn upload_hour(self: Arc<Self>, hour: DateHourKey) -> Result<(), String> {
+    pub async fn upload_hour(self: Arc<Self>, scope: String, hour: DateHourKey) -> Result<(), String> {
         let Some(s3) = self.s3.clone() else {
             return Err("S3 is not set up".to_string());
         };
 
-        let dir = self.dir(LogsStream::Main);
+        let dir = self.dir(LogsStream::Main, &scope);
         let index_copy = dir.join(format!("{}.upload", index_file_name(hour)));
         let key_index_copy = dir.join(format!("{}.upload", key_index_file_name(hour)));
 
         let storage = self.clone();
         let copies_dir = dir.clone();
         let copies = (index_copy.clone(), key_index_copy.clone());
+        let copies_scope = scope.clone();
         let copied = tokio::task::spawn_blocking(move || {
-            storage.seal_and_copy(hour, &copies_dir, &copies.0, &copies.1)
+            storage.seal_and_copy(&copies_scope, hour, &copies_dir, &copies.0, &copies.1)
         })
         .await
         .map_err(|err| err.to_string())?;
 
         let uploaded = match &copied {
             Ok(data_copies) => {
-                s3.upload(hour, data_copies, &index_copy, &key_index_copy)
+                s3.upload(&scope, hour, data_copies, &index_copy, &key_index_copy)
                     .await
             }
             Err(err) => Err(err.clone()),
@@ -833,10 +899,10 @@ impl LogsStorage {
         let storage = self.clone();
         tokio::task::spawn_blocking(move || match uploaded {
             Ok(()) => storage
-                .delete_local(LogsStream::Main, hour)
+                .delete_local(LogsStream::Main, &scope, hour)
                 .map_err(|err| format!("Uploaded, and not deleted locally: {}", err)),
             Err(err) => {
-                storage.set_sealed(LogsStream::Main, hour, false);
+                storage.set_sealed(LogsStream::Main, &scope, hour, false);
                 Err(err)
             }
         })
@@ -847,6 +913,7 @@ impl LogsStorage {
     /// Returns the copies of the data files, `.data00.upload` ...
     fn seal_and_copy(
         &self,
+        scope: &str,
         hour: DateHourKey,
         dir: &Path,
         index: &Path,
@@ -855,9 +922,9 @@ impl LogsStorage {
         let now = DateTimeAsMicroseconds::now().unix_microseconds;
 
         let handle = self
-            .get_hour(LogsStream::Main, hour, false, now)
+            .get_hour(LogsStream::Main, scope, hour, false, now)
             .map_err(|err| err.to_string())?
-            .ok_or_else(|| format!("{} has no local files", hour.get_value()))?;
+            .ok_or_else(|| format!("{} has no local files", hour_name(LogsStream::Main, scope, hour)))?;
 
         let mut file = handle.file.blocking_write();
         file.set_sealed(true);
@@ -873,20 +940,25 @@ impl LogsStorage {
         Ok((0..files).map(data_copy).collect())
     }
 
-    fn set_sealed(&self, stream: LogsStream, hour: DateHourKey, sealed: bool) {
-        let handle = self.hours.lock().unwrap().get(&(stream, hour)).cloned();
+    fn set_sealed(&self, stream: LogsStream, scope: &str, hour: DateHourKey, sealed: bool) {
+        let handle = self
+            .hours
+            .lock()
+            .unwrap()
+            .get(&(stream, scope.to_string(), hour))
+            .cloned();
 
         if let Some(handle) = handle {
             handle.file.blocking_write().set_sealed(sealed);
         }
     }
 
-    /// Deletes the hours of S3 older than `hours_to_gc`
+    /// Deletes the hours of S3 older than `hours_to_gc`, of every product scope
     pub async fn gc_s3(
         &self,
         now: DateTimeAsMicroseconds,
         hours_to_gc: u64,
-    ) -> Result<Vec<DateHourKey>, String> {
+    ) -> Result<Vec<(String, DateHourKey)>, String> {
         match &self.s3 {
             Some(s3) => {
                 s3.delete_up_to(main_cutoff(now.unix_microseconds, hours_to_gc))
@@ -904,7 +976,7 @@ impl LogsStorage {
             pending_records,
             open_hours: hours
                 .keys()
-                .map(|(stream, hour)| format!("{}/{}", stream.dir_name(), hour.get_value()))
+                .map(|(stream, scope, hour)| hour_name(*stream, scope, *hour))
                 .collect(),
             cached_frames: hours
                 .values()
@@ -912,6 +984,16 @@ impl LogsStorage {
                 .sum(),
         }
     }
+}
+
+/// `logs/trading/2026101112`
+fn hour_name(stream: LogsStream, scope: &str, hour: DateHourKey) -> String {
+    format!("{}/{}/{}", stream.dir_name(), scope, hour.get_value())
+}
+
+/// The name of a file of an hour of the scope in S3, past the prefix
+pub fn scoped_name(scope: &str, file_name: String) -> String {
+    format!("{}/{}", scope, file_name)
 }
 
 fn hours_of(from: i64, to: i64) -> BTreeMap<DateHourKey, ()> {

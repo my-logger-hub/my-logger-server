@@ -8,6 +8,7 @@ use crate::{
 
 pub async fn get_events(
     app: &AppContext,
+    product_scope: &str,
     levels: Vec<LogLevelGrpcModel>,
     context_keys: Vec<LogEventContext>,
     from_date: DateTimeAsMicroseconds,
@@ -34,6 +35,7 @@ pub async fn get_events(
 
     super::search_logs(
         app,
+        product_scope,
         from_date,
         to_date,
         log_levels,

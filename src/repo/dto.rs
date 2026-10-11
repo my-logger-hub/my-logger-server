@@ -96,6 +96,22 @@ impl IgnoreItemDto {
     }
 }
 
+/// The records of the applications whose names match one of `applications` - regular
+/// expressions matched against the whole name, ignoring case - are kept and searched apart
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProductScopeDto {
+    pub name: String,
+    pub applications: Vec<String>,
+}
+
+/// The product scopes of `settings.json`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductScopesSettings {
+    /// Where the records no scope matches go - and a search which names no scope
+    pub default_scope: String,
+    pub scopes: Vec<ProductScopeDto>,
+}
+
 #[derive(Debug, Clone)]
 pub struct IgnoreWhereModel {
     pub level: LogLevelDto,
