@@ -1,6 +1,6 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -21,6 +21,9 @@ use super::{
 
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
+/// The folder of the hours in the bucket when the settings give none
+const DEFAULT_PREFIX: &str = "logs";
+
 /// An hour found missing in S3 is asked for again after this
 const MISSING_HOUR_TTL: Duration = Duration::from_secs(60);
 
@@ -40,15 +43,20 @@ struct CachedIndex {
 pub struct S3Archive {
     client: S3Client,
     bucket: String,
-    /// Empty, or ends with '/'
+    /// Ends with '/'
     prefix: String,
     indexes: Mutex<BTreeMap<DateHourKey, CachedIndex>>,
     bucket_is_ready: AtomicBool,
 }
 
 impl S3Archive {
-    pub fn new(settings: &S3Settings, env_name: &str) -> Self {
-        let prefix = settings.prefix.as_deref().unwrap_or(env_name).trim_matches('/');
+    pub fn new(settings: &S3Settings) -> Self {
+        let prefix = settings
+            .prefix
+            .as_deref()
+            .map(|prefix| prefix.trim_matches('/'))
+            .filter(|prefix| !prefix.is_empty())
+            .unwrap_or(DEFAULT_PREFIX);
 
         Self {
             client: S3Client::new(
@@ -58,11 +66,7 @@ impl S3Archive {
                 settings.endpoint.as_str(),
             ),
             bucket: settings.bucket.clone(),
-            prefix: if prefix.is_empty() {
-                String::new()
-            } else {
-                format!("{}/", prefix)
-            },
+            prefix: format!("{}/", prefix),
             indexes: Mutex::new(BTreeMap::new()),
             bucket_is_ready: AtomicBool::new(false),
         }
@@ -162,12 +166,12 @@ impl S3Archive {
         Ok(Arc::new(S3ObjectStream::new(stream)))
     }
 
-    /// Uploads the data file, checks its size, then uploads the key index and the index:
-    /// an hour is in S3 once its index is.
+    /// Uploads the data files - `data_paths[n]` as `.dataNN` - checking the size of each,
+    /// then the key index and the index: an hour is in S3 once its index is.
     pub async fn upload(
         &self,
         hour: DateHourKey,
-        data_path: &Path,
+        data_paths: &[PathBuf],
         index_path: &Path,
         key_index_path: &Path,
     ) -> Result<(), String> {
@@ -190,40 +194,9 @@ impl S3Archive {
             self.bucket_is_ready.store(true, Ordering::Relaxed);
         }
 
-        let data_key = self.key(data_file_name(hour));
-        let data_len = tokio::fs::metadata(data_path)
-            .await
-            .map_err(|err| format!("{}: {}", data_path.display(), err))?
-            .len();
-
-        let path = data_path.to_path_buf();
-
-        self.client
-            .upload_with_writer(
-                &self.bucket,
-                &data_key,
-                data_len as usize,
-                UPLOAD_TIMEOUT,
-                |mut writer| async move {
-                    let mut file = tokio::fs::File::open(&path).await?;
-                    tokio::io::copy(&mut file, &mut writer).await?;
-                    writer.shutdown().await
-                },
-            )
-            .await
-            .map_err(|err| format!("Upload of {}: {}", data_key, err))?;
-
-        let uploaded = self
-            .client
-            .get_object_size(&self.bucket, &data_key)
-            .await
-            .map_err(|err| format!("{}: {}", data_key, err))?;
-
-        if uploaded != data_len {
-            return Err(format!(
-                "{} is {} bytes in S3, and {} bytes were uploaded",
-                data_key, uploaded, data_len
-            ));
+        for (file, data_path) in data_paths.iter().enumerate() {
+            self.upload_data_file(data_path, self.key(data_file_name(hour, file as u8)))
+                .await?;
         }
 
         for (path, file_name) in [
@@ -247,10 +220,50 @@ impl S3Archive {
         Ok(())
     }
 
-    /// Deletes every hour up to `cutoff`: its index first, so an hour deleted halfway is
-    /// not read
+    /// Streams the file to S3 and checks the size it has there
+    async fn upload_data_file(&self, path: &Path, key: String) -> Result<(), String> {
+        let len = tokio::fs::metadata(path)
+            .await
+            .map_err(|err| format!("{}: {}", path.display(), err))?
+            .len();
+
+        let path = path.to_path_buf();
+
+        self.client
+            .upload_with_writer(
+                &self.bucket,
+                &key,
+                len as usize,
+                UPLOAD_TIMEOUT,
+                |mut writer| async move {
+                    let mut file = tokio::fs::File::open(&path).await?;
+                    tokio::io::copy(&mut file, &mut writer).await?;
+                    writer.shutdown().await
+                },
+            )
+            .await
+            .map_err(|err| format!("Upload of {}: {}", key, err))?;
+
+        let uploaded = self
+            .client
+            .get_object_size(&self.bucket, &key)
+            .await
+            .map_err(|err| format!("{}: {}", key, err))?;
+
+        if uploaded != len {
+            return Err(format!(
+                "{} is {} bytes in S3, and {} bytes were uploaded",
+                key, uploaded, len
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Deletes every hour up to `cutoff` - every object of it the bucket lists: its index
+    /// first, so an hour deleted halfway is not read
     pub async fn delete_up_to(&self, cutoff: DateHourKey) -> Result<Vec<DateHourKey>, String> {
-        let mut hours = BTreeSet::new();
+        let mut hours: BTreeMap<DateHourKey, Vec<String>> = BTreeMap::new();
         let mut continuation_token: Option<String> = None;
 
         loop {
@@ -259,7 +272,7 @@ impl S3Archive {
                 .list_objects_v2(
                     &self.bucket,
                     S3ListObjectsRequest {
-                        prefix: (!self.prefix.is_empty()).then_some(self.prefix.as_str()),
+                        prefix: Some(self.prefix.as_str()),
                         continuation_token: continuation_token.as_deref(),
                         ..Default::default()
                     },
@@ -268,19 +281,17 @@ impl S3Archive {
                 .map_err(|err| format!("Listing of {}: {}", self.bucket, err))?;
 
             for object in &page.objects {
+                // `YYYYMMDDHH.` and what the file of the hour is
                 let hour = object
                     .key
                     .strip_prefix(self.prefix.as_str())
-                    .and_then(|name| {
-                        name.strip_suffix(".data")
-                            .or_else(|| name.strip_suffix(".index"))
-                            .or_else(|| name.strip_suffix(".index-by-key"))
-                    })
+                    .filter(|name| name.get(10..11) == Some("."))
+                    .and_then(|name| name.get(..10))
                     .and_then(DateHourKey::parse_from_str);
 
                 if let Some(hour) = hour {
                     if hour <= cutoff {
-                        hours.insert(hour);
+                        hours.entry(hour).or_default().push(object.key.clone());
                     }
                 }
             }
@@ -292,21 +303,20 @@ impl S3Archive {
             }
         }
 
-        for hour in &hours {
-            for key in [
-                self.key(index_file_name(*hour)),
-                self.key(key_index_file_name(*hour)),
-                self.key(data_file_name(*hour)),
-            ] {
+        for (hour, mut keys) in hours.iter_mut().map(|(hour, keys)| (*hour, std::mem::take(keys))) {
+            let index_key = self.key(index_file_name(hour));
+            keys.sort_by_key(|key| *key != index_key);
+
+            for key in keys {
                 self.client
                     .delete_file(&self.bucket, &key)
                     .await
                     .map_err(|err| format!("Delete of {}: {}", key, err))?;
             }
 
-            self.indexes.lock().unwrap().remove(hour);
+            self.indexes.lock().unwrap().remove(&hour);
         }
 
-        Ok(hours.into_iter().collect())
+        Ok(hours.into_keys().collect())
     }
 }

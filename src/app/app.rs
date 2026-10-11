@@ -84,7 +84,7 @@ impl AppContext {
         let s3 = settings_reader
             .get_s3_settings()
             .await
-            .map(|settings| S3Archive::new(&settings, &env_name));
+            .map(|settings| S3Archive::new(&settings));
 
         Self {
             app_states: Arc::new(AppStates::create_initialized()),

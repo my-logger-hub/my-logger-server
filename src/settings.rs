@@ -23,7 +23,7 @@ pub struct S3Settings {
     pub access_key: String,
     pub secret_key: String,
     pub bucket: String,
-    /// The folder of the hours in the bucket; `EnvName` when it is not set
+    /// The folder of the hours in the bucket; `logs` when it is not set
     pub prefix: Option<String>,
 }
 

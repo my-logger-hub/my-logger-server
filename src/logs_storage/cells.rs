@@ -1,15 +1,16 @@
-use super::FRAME_LEN;
+use super::{FrameId, FRAME_LEN};
 
 pub const SECONDS_PER_HOUR: usize = 3600;
 
-const CELL_LEN: usize = 8;
+const CELL_LEN: usize = 9;
 const CELLS_LEN: usize = SECONDS_PER_HOUR * CELL_LEN;
 
 /// No first entry: a second with no records
 const NO_OFFSET: u32 = u32::MAX;
 
-/// The cells - `offset u32 · count u32` for each second: the offset of the first entry of
-/// the second in the data file and how many records the second has - then a byte which
+/// The cells - `file u8 · offset u32 · count u32` for each second: the data file of the
+/// first entry of the second, the entry's offset in it, and how many records the second
+/// has - then a byte which
 /// says whether they agree with the data file. A flush marks the index dirty before it
 /// touches the data file, and writes the cells and the clean mark back once it is done:
 /// an index found dirty is rebuilt from the data file.
@@ -18,17 +19,20 @@ pub const INDEX_STATE_OFFSET: u64 = CELLS_LEN as u64;
 pub const INDEX_DIRTY: u8 = 1;
 const INDEX_CLEAN: u8 = 0;
 
-/// Where the first entry of a second is: the frame's offset in the data file and the
-/// entry's offset from the frame's start.
+/// Where the first entry of a second is: its frame and the entry's offset from the frame's
+/// start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
-    pub frame: u32,
+    pub frame: FrameId,
     pub offset: u32,
 }
 
 impl Cell {
     pub const EMPTY: Cell = Cell {
-        frame: u32::MAX,
+        frame: FrameId {
+            file: u8::MAX,
+            offset: u32::MAX,
+        },
         offset: u32::MAX,
     };
 
@@ -39,15 +43,15 @@ impl Cell {
     /// A frame starts at a multiple of its length and an entry starts inside it, so the
     /// two make one offset in the file - never `NO_OFFSET`, as no entry starts in the last
     /// bytes of a frame.
-    fn to_file_offset(self) -> u32 {
+    fn to_file_offset(self) -> (u8, u32) {
         if self.is_empty() {
-            NO_OFFSET
+            (0, NO_OFFSET)
         } else {
-            self.frame + self.offset
+            (self.frame.file, self.frame.offset + self.offset)
         }
     }
 
-    fn from_file_offset(offset: u32) -> Self {
+    fn from_file_offset(file: u8, offset: u32) -> Self {
         if offset == NO_OFFSET {
             return Self::EMPTY;
         }
@@ -55,7 +59,10 @@ impl Cell {
         let frame = offset - offset % FRAME_LEN as u32;
 
         Self {
-            frame,
+            frame: FrameId {
+                file,
+                offset: frame,
+            },
             offset: offset - frame,
         }
     }
@@ -120,7 +127,9 @@ impl HourCells {
         let mut result = Vec::with_capacity(INDEX_FILE_LEN);
 
         for (cell, count) in self.cells.iter().zip(&self.counts) {
-            result.extend_from_slice(&cell.to_file_offset().to_le_bytes());
+            let (file, offset) = cell.to_file_offset();
+            result.push(file);
+            result.extend_from_slice(&offset.to_le_bytes());
             result.extend_from_slice(&count.to_le_bytes());
         }
 
@@ -137,9 +146,9 @@ impl HourCells {
         let mut result = Self::new();
 
         for (second, chunk) in bytes[..CELLS_LEN].chunks_exact(CELL_LEN).enumerate() {
-            let offset = u32::from_le_bytes(chunk[0..4].try_into().unwrap());
-            result.cells[second] = Cell::from_file_offset(offset);
-            result.counts[second] = u32::from_le_bytes(chunk[4..8].try_into().unwrap());
+            let offset = u32::from_le_bytes(chunk[1..5].try_into().unwrap());
+            result.cells[second] = Cell::from_file_offset(chunk[0], offset);
+            result.counts[second] = u32::from_le_bytes(chunk[5..9].try_into().unwrap());
         }
 
         Some(result)
@@ -153,9 +162,18 @@ mod tests {
     #[test]
     fn index_file_round_trip() {
         let mut cells = HourCells::new();
-        cells.set(5, Cell { frame: 0, offset: 10 });
+        cells.set(5, Cell { frame: FrameId::HEAD, offset: 11 });
         cells.set_count(5, 3);
-        cells.set(3599, Cell { frame: 32768 * 7, offset: 200 });
+        cells.set(
+            3599,
+            Cell {
+                frame: FrameId {
+                    file: 2,
+                    offset: 32768 * 7,
+                },
+                offset: 200,
+            },
+        );
         cells.set_count(3599, 100_000);
 
         let bytes = cells.to_index_file();

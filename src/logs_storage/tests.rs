@@ -138,6 +138,9 @@ async fn seconds_written_in_any_order_are_read_in_time_order() {
     let mut file = HourFile::open(&dir, hour, &indexed_keys(), true).unwrap();
     let mut expected: BTreeMap<usize, Vec<LogRecordProto>> = BTreeMap::new();
 
+    // Four frames a data file: the chain goes over from file to file all the time
+    file.set_data_file_len(4 * FRAME_LEN as u64);
+
     // Seconds come in order, now and then a late one - into a second written before or
     // between two written ones - and the late ones are merged into the last block
     for step in 0..1500 {
@@ -179,6 +182,18 @@ async fn seconds_written_in_any_order_are_read_in_time_order() {
         .collect();
 
     check_chain(&file, &expected);
+    assert!(file.data_files_count() > 10, "{} data files", file.data_files_count());
+
+    // A scan streams the chain over all the data files
+    let mut scanned = Vec::new();
+    scan_seconds(file.data_files(), file.cells(), hour_start, 0, SECONDS_PER_HOUR - 1, |entry| {
+        scanned.push(entry.time);
+        true
+    })
+    .await
+    .unwrap();
+    let walked: Vec<i64> = file.walk().iter().map(|(_, _, time)| *time).collect();
+    assert_eq!(scanned, walked);
 
     // Read back from the files
     let reopened = HourFile::open(&dir, hour, &indexed_keys(), true).unwrap();
@@ -227,25 +242,44 @@ async fn seconds_written_in_any_order_are_read_in_time_order() {
     let rebuilt = HourFile::open(&dir, hour, &indexed_keys(), false).unwrap();
     assert_eq!(rebuilt.whole_key_index(), file.whole_key_index());
 
-    // The copy which is uploaded: the same entries, frames one after another
+    // The copy which is uploaded: the same entries, frames one after another - over to
+    // the next file where a data file is as long as it grows
     let compact_dir = test_dir("any-order-compact");
-    file.compact_to(
-        &compact_dir.join(data_file_name(hour)),
-        &compact_dir.join(index_file_name(hour)),
-        &compact_dir.join(key_index_file_name(hour)),
-    )
-    .unwrap();
+    let files = file
+        .compact_to(
+            |file| compact_dir.join(data_file_name(hour, file)),
+            &compact_dir.join(index_file_name(hour)),
+            &compact_dir.join(key_index_file_name(hour)),
+        )
+        .unwrap();
 
     let compact = HourFile::open(&compact_dir, hour, &indexed_keys(), false).unwrap();
     check_chain(&compact, &expected);
     assert_eq!(compact.whole_key_index(), file.whole_key_index());
+    assert_eq!(compact.data_files_count(), files as usize);
 
-    let frames: Vec<u32> = compact.walk().iter().map(|(frame, _, _)| *frame).collect();
-    assert!(frames.windows(2).all(|pair| pair[1] == pair[0] || pair[1] == pair[0] + FRAME_LEN as u32));
-    assert!(
-        std::fs::metadata(compact_dir.join(data_file_name(hour))).unwrap().len()
-            <= std::fs::metadata(dir.join(data_file_name(hour))).unwrap().len()
-    );
+    let frames: Vec<FrameId> = compact.walk().iter().map(|(frame, _, _)| *frame).collect();
+    assert!(frames.windows(2).all(|pair| {
+        let next_in_file = FrameId {
+            file: pair[0].file,
+            offset: pair[0].offset + FRAME_LEN as u32,
+        };
+        let next_file = FrameId {
+            file: pair[0].file + 1,
+            offset: 0,
+        };
+        pair[1] == pair[0] || pair[1] == next_in_file || pair[1] == next_file
+    }));
+
+    let size = |dir: &PathBuf| -> u64 {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".data"))
+            .map(|entry| entry.metadata().unwrap().len())
+            .sum()
+    };
+    assert!(size(&compact_dir) <= size(&dir));
 
     std::fs::remove_dir_all(&dir).unwrap();
     std::fs::remove_dir_all(&compact_dir).unwrap();

@@ -4,8 +4,20 @@ use rust_extensions::{ParseUInt32VariableSizeResult, UInt32VariableSize};
 /// working frames of archived-data.
 pub const FRAME_LEN: usize = 32 * 1024;
 
-/// `size u32 · next u32 · used u16`
-pub const FRAME_HEADER_LEN: usize = 10;
+/// `size u32 · next_file u8 · next u32 · used u16`
+pub const FRAME_HEADER_LEN: usize = 11;
+
+/// A frame of the data files of an hour: the number of its file and its offset in it
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FrameId {
+    pub file: u8,
+    pub offset: u32,
+}
+
+impl FrameId {
+    /// The first frame of the first file: the head of the chain, never a `next`
+    pub const HEAD: FrameId = FrameId { file: 0, offset: 0 };
+}
 
 pub const FRAME_CAPACITY: usize = FRAME_LEN - FRAME_HEADER_LEN;
 
@@ -18,8 +30,8 @@ pub const ENTRY_TIME_LEN: usize = 8;
 pub const MAX_ENTRY_BODY_LEN: usize = 8 * 1024;
 
 /// One frame of a data file: a header, then `used` bytes of entries one after another.
-/// `next` is the offset of the next frame of the chain in the same file, 0 on the last
-/// one: the first frame of a file is the head of its chain and is never a `next`.
+/// `next` is the next frame of the chain - in this data file or in another one of the hour -
+/// and none on the last one: the head of the chain, frame 0 of file 0, is never a `next`.
 #[derive(Clone)]
 pub struct Frame {
     bytes: Vec<u8>,
@@ -56,9 +68,10 @@ impl Frame {
             ));
         }
 
-        let next = frame.next() as usize;
-        if next % FRAME_LEN != 0 {
-            return Err(format!("A frame is chained to the offset {}", next));
+        if let Some(next) = frame.next() {
+            if next.offset as usize % FRAME_LEN != 0 {
+                return Err(format!("A frame is chained to {:?}", next));
+            }
         }
 
         Ok(frame)
@@ -68,20 +81,27 @@ impl Frame {
         &self.bytes
     }
 
-    pub fn next(&self) -> u32 {
-        u32::from_le_bytes(self.bytes[4..8].try_into().unwrap())
+    pub fn next(&self) -> Option<FrameId> {
+        let next = FrameId {
+            file: self.bytes[4],
+            offset: u32::from_le_bytes(self.bytes[5..9].try_into().unwrap()),
+        };
+
+        (next != FrameId::HEAD).then_some(next)
     }
 
-    pub fn set_next(&mut self, next: u32) {
-        self.bytes[4..8].copy_from_slice(&next.to_le_bytes());
+    pub fn set_next(&mut self, next: Option<FrameId>) {
+        let next = next.unwrap_or(FrameId::HEAD);
+        self.bytes[4] = next.file;
+        self.bytes[5..9].copy_from_slice(&next.offset.to_le_bytes());
     }
 
     pub fn used(&self) -> usize {
-        u16::from_le_bytes(self.bytes[8..10].try_into().unwrap()) as usize
+        u16::from_le_bytes(self.bytes[9..11].try_into().unwrap()) as usize
     }
 
     fn set_used(&mut self, used: usize) {
-        self.bytes[8..10].copy_from_slice(&(used as u16).to_le_bytes());
+        self.bytes[9..11].copy_from_slice(&(used as u16).to_le_bytes());
     }
 
     /// The offset from the start of the frame its entries end at

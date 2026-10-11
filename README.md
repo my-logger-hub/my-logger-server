@@ -13,11 +13,11 @@ Logs are kept in plain files, one pair of files per hour: no search engine and n
 | main | Warning, Error, FatalError | `<LogsDbPath>/logs/` | on the local disk until 2 hours after the hour ends, then uploaded to S3 and kept there for `hours_to_gc`; without S3, locally for `hours_to_gc` |
 | debug-info | Debug, Info | `<LogsDbPath>/debug-info/` | deleted 2 hours after the hour ends |
 
-An hour is `YYYYMMDDHH.data`, `YYYYMMDDHH.index` and `YYYYMMDDHH.index-by-key`.
+An hour is its data files `YYYYMMDDHH.data00`, `.data01` … `.dataFF`, `YYYYMMDDHH.index` and `YYYYMMDDHH.index-by-key`. A data file takes new frames until it is 3 GiB long, then the next one does — a new frame of an insert into an older file too, so the files never grow past that by more than a frame.
 
-**`.data`** is made of 32 KiB frames, the layout of the working frames of [archived-data](https://github.com/my-jet-tools/archived-data): a header `size u32 · next u32 · used u16`, then `used` bytes of entries. The frames are one chain in time order; `next` is the offset of the next frame, 0 on the last one. An entry is `[varint length][time i64][zstd block]`: the records of one second, each protobuf-encoded behind a varint length (rust-extensions `UInt32VariableSize`), compressed together, at most 8 KiB. A busy second takes several blocks.
+**`.dataNN`** are made of 32 KiB frames, the layout of the working frames of [archived-data](https://github.com/my-jet-tools/archived-data): a header `size u32 · next_file u8 · next u32 · used u16`, then `used` bytes of entries. The frames of all the files of the hour are one chain in time order; `next_file · next` is the next frame — in the same file or another one — none on the last one. An entry is `[varint length][time i64][zstd block]`: the records of one second, each protobuf-encoded behind a varint length (rust-extensions `UInt32VariableSize`), compressed together, at most 8 KiB. A busy second takes several blocks.
 
-**`.index`** is 3600 cells `offset u32 · count u32`, one per second of the hour: the offset of the first entry of the second in the data file and how many records the second has. Then one byte: 0 when the cells agree with the data file. A flush sets it to 1 before it writes the frames and back to 0 together with the cells; an index found at 1 is rebuilt by walking the chain.
+**`.index`** is 3600 cells `file u8 · offset u32 · count u32`, one per second of the hour: the data file of the first entry of the second, the entry's offset in it, and how many records the second has. Then one byte: 0 when the cells agree with the data file. A flush sets it to 1 before it writes the frames and back to 0 together with the cells; an index found at 1 is rebuilt by walking the chain.
 
 **`.index-by-key`** — for the level, the process, `Application`, `Version` and the `InsightsKeys` of the settings: how many records of each second have each value (lowercase). A directory first — every key and value, and where its seconds are — then, packed, the seconds each value is in: `varint(step from the second before) · varint(records)`, 2–3 bytes a second. A key with more than 1000 values in an hour is not indexed in it. For the current and the previous hour it is kept in memory whole, as the writes build it, and written at most every 5 seconds, when the hour is sealed and when the process stops; one which does not count the records the index counts is rebuilt from the data file. Of an older hour — on the local disk or in S3 alike — only the page of its keys and values is read: one 64 KiB read from its start, its header telling whether the page goes on past it; what the read brought in past the page is kept, so an index shorter than one read is read once. The seconds of a value not brought in yet are read when a filter asks for it — blocks less than 64 KiB apart in one read, always forward — and kept.
 
@@ -37,7 +37,7 @@ A search goes one of two ways, both stopping at the other end of the range or at
 
 ### S3
 
-With `S3Settings` set, a main hour 2 hours past its end is sealed and copied for the upload: the data file into frames which follow one another, each filled before the next one starts, so a read goes forward from the cell of its second with no jump; the index pointing into them; the key index whole, its page first. They are uploaded — the data file, the key index, the index last — and deleted locally. Searches read such hours from S3. Every 10 minutes the hours older than `hours_to_gc` are deleted from S3.
+With `S3Settings` set, a main hour 2 hours past its end is sealed and copied for the upload: the data files into frames which follow one another, each filled before the next one starts and over to the next file after 3 GiB, so a read goes forward from the cell of its second with no jump; the index pointing into them; the key index whole, its page first. They are uploaded as `<prefix>/YYYYMMDDHH.data00` … , `.index-by-key`, `.index` — the data files first, the index last; the prefix is `logs` unless the settings give one — and deleted locally. Searches read such hours from S3. Every 10 minutes the hours older than `hours_to_gc` are deleted from S3.
 
 ## MCP server (read-only for AI)
 
@@ -94,7 +94,7 @@ S3Settings:
   access_key: string
   secret_key: string
   bucket: my-logs
-  prefix: string # optional, EnvName when not set
+  prefix: string # optional, logs when not set
 ```
 
 `LogsDbPath` — the root directory: `logs/` and `debug-info/` with the hour files, `settings.json` (ignore-events) and `statistics.json` (hourly aggregates).

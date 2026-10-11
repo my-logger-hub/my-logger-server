@@ -6,15 +6,20 @@ use std::{
 use rust_extensions::{AsyncBytesStream, BufferedReader};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use super::{Entry, Frame, HourCells, S3Archive, FRAME_HEADER_LEN, FRAME_LEN, MICROS_PER_SECOND};
+use crate::repo::DateHourKey;
+
+use super::{
+    data_file_name, Entry, Frame, FrameId, HourCells, S3Archive, FRAME_HEADER_LEN, FRAME_LEN,
+    MAX_DATA_FILES, MICROS_PER_SECOND,
+};
 
 /// How much of a local file one chunk of its stream is - and how much a read of a part of
 /// a file asks for at least
 pub const READ_LEN: usize = 64 * 1024;
 
-/// A chain longer than this many frames returns to a frame it walked: a data file holds
-/// no more
-const MAX_HOPS: usize = 131_072;
+/// A chain longer than this many frames returns to a frame it walked: the data files of an
+/// hour hold no more
+const MAX_HOPS: usize = MAX_DATA_FILES * 131_072;
 
 pub type DataStream = Arc<dyn AsyncBytesStream<String, Chunk = Vec<u8>> + Send + Sync>;
 
@@ -137,40 +142,59 @@ pub async fn read_bytes(source: &DataSource, offset: u64, len: usize) -> Result<
     Ok(reader.as_slice()[..read].to_vec())
 }
 
+/// The data files of an hour: `.data00`, `.data01`... on the local disk or in S3
+#[derive(Clone)]
+pub enum DataFiles {
+    Local { dir: PathBuf, hour: DateHourKey },
+    S3 { archive: Arc<S3Archive>, hour: DateHourKey },
+}
+
+impl DataFiles {
+    pub fn file(&self, file: u8) -> DataSource {
+        match self {
+            DataFiles::Local { dir, hour } => DataSource::Local(dir.join(data_file_name(*hour, file))),
+            DataFiles::S3 { archive, hour } => DataSource::S3 {
+                archive: archive.clone(),
+                file_name: data_file_name(*hour, file),
+            },
+        }
+    }
+}
+
 /// Reads the frames of a chain through a `BufferedReader`: from one stream while each
-/// frame is the one right after the one before, from a new one where the chain jumps.
+/// frame is the one right after the one before in the same file, from a new one where the
+/// chain jumps or goes over to another file.
 struct FramesReader {
-    source: DataSource,
-    end: Option<u64>,
+    files: DataFiles,
+    /// Where the frames to read end in a file: S3 is asked for that range only
+    end: Option<FrameId>,
     reader: Option<BufferedReader<String, DataStream>>,
-    position: u64,
+    position: FrameId,
 }
 
 impl FramesReader {
-    fn new(source: DataSource, end: Option<u64>) -> Self {
+    fn new(files: DataFiles, end: Option<FrameId>) -> Self {
         Self {
-            source,
+            files,
             end,
             reader: None,
-            position: 0,
+            position: FrameId::HEAD,
         }
     }
 
-    async fn read_frame(&mut self, offset: u32) -> Result<Frame, String> {
-        let offset = offset as u64;
-
-        if self.reader.is_none() || self.position != offset {
-            self.open_at(offset).await?;
+    async fn read_frame(&mut self, frame: FrameId) -> Result<Frame, String> {
+        if self.reader.is_none() || self.position != frame {
+            self.open_at(frame).await?;
         }
 
         loop {
             let reader = self.reader.as_mut().unwrap();
 
             if reader.as_slice().len() >= FRAME_LEN {
-                let frame = Frame::from_bytes(reader.as_slice()[..FRAME_LEN].to_vec())?;
+                let read = Frame::from_bytes(reader.as_slice()[..FRAME_LEN].to_vec())?;
                 reader.mark_as_read(FRAME_LEN);
-                self.position += FRAME_LEN as u64;
-                return Ok(frame);
+                self.position.offset += FRAME_LEN as u32;
+                return Ok(read);
             }
 
             if reader.read_mode() {
@@ -181,20 +205,28 @@ impl FramesReader {
             // The range asked for is over: the rest of the file is read
             if self.end.is_some() {
                 self.end = None;
-                self.open_at(offset).await?;
+                self.open_at(frame).await?;
                 continue;
             }
 
-            return Err(format!("The data file ends inside the frame at {}", offset));
+            return Err(format!("A data file ends inside the frame {:?}", frame));
         }
     }
 
-    async fn open_at(&mut self, offset: u64) -> Result<(), String> {
-        let end = self.end.filter(|end| *end >= offset);
-        let stream = self.source.open(offset, end).await?;
+    async fn open_at(&mut self, frame: FrameId) -> Result<(), String> {
+        let end = self
+            .end
+            .filter(|end| end.file == frame.file && end.offset >= frame.offset)
+            .map(|end| end.offset as u64 + FRAME_LEN as u64 - 1);
+
+        let stream = self
+            .files
+            .file(frame.file)
+            .open(frame.offset as u64, end)
+            .await?;
 
         self.reader = Some(BufferedReader::new(stream));
-        self.position = offset;
+        self.position = frame;
 
         Ok(())
     }
@@ -204,7 +236,7 @@ impl FramesReader {
 /// its chain: from the first entry of the first of them which has one, to the first entry
 /// of a later second - or until `on_entry` says `false`.
 pub async fn scan_seconds(
-    source: DataSource,
+    files: DataFiles,
     cells: &HourCells,
     hour_start: i64,
     from_second: usize,
@@ -220,18 +252,16 @@ pub async fn scan_seconds(
     }
 
     // The entries of the window end in the frame where the next second starts
-    let end = cells
-        .first_from(to_second + 1)
-        .map(|(_, cell)| cell.frame as u64 + FRAME_LEN as u64 - 1);
+    let end = cells.first_from(to_second + 1).map(|(_, cell)| cell.frame);
 
     let to_exclusive = hour_start + (to_second as i64 + 1) * MICROS_PER_SECOND;
 
-    let mut frames = FramesReader::new(source, end);
-    let mut frame_offset = start.frame;
+    let mut frames = FramesReader::new(files, end);
+    let mut frame_id = start.frame;
     let mut offset = start.offset as usize;
 
     for _ in 0..MAX_HOPS {
-        let frame = frames.read_frame(frame_offset).await?;
+        let frame = frames.read_frame(frame_id).await?;
 
         while offset < frame.records_end() {
             let entry = frame.entry_at(offset)?;
@@ -243,11 +273,11 @@ pub async fn scan_seconds(
             offset += entry.len;
         }
 
-        if frame.next() == 0 {
+        let Some(next) = frame.next() else {
             return Ok(());
-        }
+        };
 
-        frame_offset = frame.next();
+        frame_id = next;
         offset = FRAME_HEADER_LEN;
     }
 

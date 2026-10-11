@@ -11,25 +11,29 @@ use std::{
 use crate::repo::DateHourKey;
 
 use super::{
-    compress_records, decompress_records, Cell, DataSource, Frame, HourCells, HourKeyIndex,
-    KeyIndex, KeyIndexDirectory, LogRecordProto,
-    FRAME_CAPACITY, FRAME_HEADER_LEN, FRAME_LEN, INDEX_DIRTY, INDEX_STATE_OFFSET,
-    SECONDS_PER_HOUR,
+    compress_records, decompress_records, Cell, DataFiles, DataSource, Frame, FrameId,
+    HourCells, HourKeyIndex, KeyIndex, KeyIndexDirectory, LogRecordProto, FRAME_CAPACITY,
+    FRAME_HEADER_LEN, FRAME_LEN, INDEX_DIRTY, INDEX_STATE_OFFSET, SECONDS_PER_HOUR,
 };
 
 pub const MICROS_PER_SECOND: i64 = 1_000_000;
 
-/// Offsets are `u32`: a data file holds at most this many frames - 4 GiB
-const MAX_FRAMES: u32 = ((u32::MAX as u64 + 1) / FRAME_LEN as u64) as u32;
+/// A data file of an hour takes new frames until it is this long; then the next one does.
+/// What is in it may still be rewritten in place, so it is a little longer at most.
+pub const DATA_FILE_LEN: u64 = 3 * 1024 * 1024 * 1024;
+
+/// Its number is a byte
+pub const MAX_DATA_FILES: usize = 256;
 
 const CHAIN_LOOP: &str = "The chain of frames returns to a frame it walked";
 
 /// The key index is written at most this often while the hour is written into: it is kept
-/// in memory, and one which did not get its last changes is rebuilt from the data file
+/// in memory, and one which did not get its last changes is rebuilt from the data files
 const KEY_INDEX_WRITE_INTERVAL: Duration = Duration::from_secs(5);
 
-pub fn data_file_name(hour: DateHourKey) -> String {
-    format!("{}.data", hour.get_value())
+/// `.data00`, `.data01` ... `.dataFF`
+pub fn data_file_name(hour: DateHourKey, file: u8) -> String {
+    format!("{}.data{:02X}", hour.get_value(), file)
 }
 
 pub fn index_file_name(hour: DateHourKey) -> String {
@@ -54,7 +58,7 @@ pub fn second_of(hour_start: i64, time: i64) -> Option<usize> {
 /// Where an entry is, or goes: its frame and its offset from the frame's start
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Position {
-    frame: u32,
+    frame: FrameId,
     offset: usize,
 }
 
@@ -74,25 +78,35 @@ impl Position {
     }
 }
 
+/// A data file of the hour
+struct DataFile {
+    /// Once it exists
+    file: Option<File>,
+    /// Its frames, flushed or not
+    frames_count: u32,
+    /// Its frames on disk
+    frames_on_disk: u32,
+}
+
 /// The files of one hour as their writer keeps them: the cells in memory, the frames an
 /// insert has read or changed, and the changes until they are flushed.
 pub struct HourFile {
+    hour: DateHourKey,
     hour_start: i64,
-    data_path: PathBuf,
+    dir: PathBuf,
     index_path: PathBuf,
-    /// The data file and the index, once they exist
-    files: Option<(File, File)>,
+    /// Once it exists
+    index_file: Option<File>,
+    data_files: Vec<DataFile>,
+    /// A data file takes new frames until it is this long
+    data_file_len: u64,
     cells: HourCells,
-    /// Frames of the data file, flushed or not
-    frames_count: u32,
-    /// Frames the data file has on disk
-    frames_on_disk: u32,
     /// The last frame of the chain
-    tail: Option<u32>,
+    tail: Option<FrameId>,
     last_second: Option<usize>,
-    frames: HashMap<u32, Frame>,
+    frames: HashMap<FrameId, Frame>,
     /// Frames changed since the last flush, in the order they are to be written
-    dirty: Vec<u32>,
+    dirty: Vec<FrameId>,
     index_clean_on_disk: bool,
     /// Uploaded, or being uploaded: nothing is written into it any more
     sealed: bool,
@@ -112,10 +126,10 @@ enum KeyIndexState {
 
 impl HourFile {
     /// The files of the hour in `dir`. Nothing is created until the first flush. An index
-    /// which is not clean - its flush did not complete - is rebuilt from the data file, and
-    /// so is a key index which does not count the records the index does. A new hour indexes
-    /// `indexed_keys`. The key index of an hour to be written - `full_key_index` - is read
-    /// whole, of any other only its page of keys and values.
+    /// which is not clean - its flush did not complete - is rebuilt from the data files,
+    /// and so is a key index which does not count the records the index does. A new hour
+    /// indexes `indexed_keys`. The key index of an hour to be written - `full_key_index` -
+    /// is read whole, of any other only its page of keys and values.
     pub fn open(
         dir: &Path,
         hour: DateHourKey,
@@ -123,13 +137,14 @@ impl HourFile {
         full_key_index: bool,
     ) -> std::io::Result<Self> {
         let mut result = Self {
+            hour,
             hour_start: hour.hour_start().unix_microseconds,
-            data_path: dir.join(data_file_name(hour)),
+            dir: dir.to_path_buf(),
             index_path: dir.join(index_file_name(hour)),
-            files: None,
+            index_file: None,
+            data_files: Vec::new(),
+            data_file_len: DATA_FILE_LEN,
             cells: HourCells::new(),
-            frames_count: 0,
-            frames_on_disk: 0,
             tail: None,
             last_second: None,
             frames: HashMap::new(),
@@ -143,40 +158,55 @@ impl HourFile {
             indexed_keys: indexed_keys.to_vec(),
         };
 
-        if !result.data_path.exists() {
+        // A file which ends inside a frame did not get the whole of it
+        let mut cut = false;
+
+        for file in 0..MAX_DATA_FILES {
+            let path = dir.join(data_file_name(hour, file as u8));
+
+            if !path.exists() {
+                break;
+            }
+
+            let data_file = OpenOptions::new().read(true).write(true).open(&path)?;
+            let len = data_file.metadata()?.len();
+
+            cut |= len % FRAME_LEN as u64 != 0;
+
+            let frames = (len / FRAME_LEN as u64) as u32;
+            result.data_files.push(DataFile {
+                file: Some(data_file),
+                frames_count: frames,
+                frames_on_disk: frames,
+            });
+        }
+
+        if result.data_files.is_empty() {
             return Ok(result);
         }
 
-        let data_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&result.data_path)?;
         let index_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(&result.index_path)?;
 
-        let data_len = data_file.metadata()?.len();
-        result.frames_count = (data_len / FRAME_LEN as u64) as u32;
-        result.frames_on_disk = result.frames_count;
-
         let mut index_bytes = Vec::new();
         (&index_file).read_to_end(&mut index_bytes)?;
 
-        result.files = Some((data_file, index_file));
+        result.index_file = Some(index_file);
 
         match HourCells::from_index_file(&index_bytes) {
-            Some(cells) if data_len % FRAME_LEN as u64 == 0 => {
+            Some(cells) if !cut => {
                 result.cells = cells;
                 result.index_clean_on_disk = true;
             }
             _ => {
                 println!(
-                    "The index of {} is not clean: it is rebuilt from the data file",
-                    result.data_path.display()
+                    "The index of {} is not clean: it is rebuilt from the data files",
+                    result.name()
                 );
-                result.rebuild(data_len)?;
+                result.rebuild()?;
             }
         }
 
@@ -199,8 +229,8 @@ impl HourFile {
             Some(key_index) => result.key_index = key_index,
             None => {
                 println!(
-                    "The key index of {} is rebuilt from the data file",
-                    result.data_path.display()
+                    "The key index of {} is rebuilt from the data files",
+                    result.name()
                 );
                 result.key_index = KeyIndexState::Full(Arc::new(result.rebuild_key_index()?));
                 result.key_index_changed = true;
@@ -209,6 +239,18 @@ impl HourFile {
         }
 
         Ok(result)
+    }
+
+    /// For the messages
+    fn name(&self) -> String {
+        format!("{}/{}", self.dir.display(), self.hour.get_value())
+    }
+
+    /// A data file to take new frames until it is `len` long - a small one tests going
+    /// over to the next file
+    #[cfg(test)]
+    pub fn set_data_file_len(&mut self, len: u64) {
+        self.data_file_len = len;
     }
 
     /// The key index file whole, when it counts the records the index does
@@ -264,8 +306,12 @@ impl HourFile {
         &self.cells
     }
 
-    pub fn data_path(&self) -> &Path {
-        &self.data_path
+    /// Where a search reads the data files of the hour
+    pub fn data_files(&self) -> DataFiles {
+        DataFiles::Local {
+            dir: self.dir.clone(),
+            hour: self.hour,
+        }
     }
 
     pub fn has_entries(&self) -> bool {
@@ -282,6 +328,13 @@ impl HourFile {
 
     pub fn set_sealed(&mut self, sealed: bool) {
         self.sealed = sealed;
+    }
+
+    fn frames_count(&self) -> u64 {
+        self.data_files
+            .iter()
+            .map(|file| file.frames_count as u64)
+            .sum()
     }
 
     /// Writes the records of one of its seconds, in time order. A second which has entries
@@ -319,7 +372,7 @@ impl HourFile {
                     println!(
                         "The last block of second {} of {} does not read: {}. The records go into a block of their own",
                         second,
-                        self.data_path.display(),
+                        self.name(),
                         err
                     );
 
@@ -336,11 +389,10 @@ impl HourFile {
         let blocks = compress_records(records);
 
         // Each entry takes at most two frames more: decided before anything changes
-        if self.frames_count as usize + 2 * blocks.len() > MAX_FRAMES as usize {
+        if self.room_for_frames() < 2 * blocks.len() as u64 {
             return Err(format!(
-                "The data file {} has {} frames, and there is no room for more",
-                self.data_path.display(),
-                self.frames_count
+                "The data files of {} have no room for more frames",
+                self.name()
             ));
         }
 
@@ -410,26 +462,31 @@ impl HourFile {
     /// The index is marked dirty before the first frame goes out, so a flush which does
     /// not complete leaves an index that is rebuilt on the next open.
     fn flush_frames(&mut self) -> std::io::Result<()> {
-        if self.files.is_none() {
-            if let Some(dir) = self.data_path.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
+        std::fs::create_dir_all(&self.dir)?;
 
-            let data_file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .open(&self.data_path)?;
+        if self.index_file.is_none() {
             let index_file = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .open(&self.index_path)?;
 
-            self.files = Some((data_file, index_file));
+            self.index_file = Some(index_file);
         }
 
-        let (data_file, index_file) = self.files.as_ref().unwrap();
+        for (number, data_file) in self.data_files.iter_mut().enumerate() {
+            if data_file.file.is_none() {
+                let file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(self.dir.join(data_file_name(self.hour, number as u8)))?;
+
+                data_file.file = Some(file);
+            }
+        }
+
+        let index_file = self.index_file.as_ref().unwrap();
 
         if self.index_clean_on_disk {
             index_file.write_all_at(&[INDEX_DIRTY], INDEX_STATE_OFFSET)?;
@@ -437,58 +494,76 @@ impl HourFile {
         }
 
         // The new frames first: nothing points at them until the changed ones are written
-        let frames_on_disk = self.frames_on_disk;
-        let (mut new_frames, changed_frames): (Vec<u32>, Vec<u32>) = self
-            .dirty
-            .iter()
-            .partition(|offset| **offset / FRAME_LEN as u32 >= frames_on_disk);
+        let data_files = &self.data_files;
+        let (mut new_frames, changed_frames): (Vec<FrameId>, Vec<FrameId>) =
+            self.dirty.iter().partition(|frame| {
+                frame.offset / FRAME_LEN as u32 >= data_files[frame.file as usize].frames_on_disk
+            });
         new_frames.sort();
 
-        for offset in new_frames.iter().chain(changed_frames.iter()) {
-            data_file.write_all_at(self.frames[offset].as_bytes(), *offset as u64)?;
+        for frame in new_frames.iter().chain(changed_frames.iter()) {
+            self.data_files[frame.file as usize]
+                .file
+                .as_ref()
+                .unwrap()
+                .write_all_at(self.frames[frame].as_bytes(), frame.offset as u64)?;
         }
 
         index_file.write_all_at(&self.cells.to_index_file(), 0)?;
         self.index_clean_on_disk = true;
 
-        self.frames_on_disk = self.frames_count;
+        for data_file in &mut self.data_files {
+            data_file.frames_on_disk = data_file.frames_count;
+        }
+
         self.dirty.clear();
 
         // The last frame is kept: it is where the next seconds go
         let tail = self.tail;
-        self.frames.retain(|offset, _| Some(*offset) == tail);
+        self.frames.retain(|frame, _| Some(*frame) == tail);
 
         Ok(())
     }
 
     /// Writes the chain into new files frame after frame, each one filled before the next
-    /// one starts: what is uploaded is read as one run. Expects the hour to be flushed.
+    /// one starts and a file going over to the next one where the data files of the hour
+    /// do: what is uploaded is read as one run. Expects the hour to be flushed. Returns how
+    /// many data files are written.
     pub fn compact_to(
         &self,
-        data_path: &Path,
+        data_path: impl Fn(u8) -> PathBuf,
         index_path: &Path,
         key_index_path: &Path,
-    ) -> std::io::Result<()> {
-        let mut data = std::io::BufWriter::new(File::create(data_path)?);
+    ) -> std::io::Result<u8> {
+        let mut data = std::io::BufWriter::new(File::create(data_path(0))?);
+        let mut files = 1;
         let mut cells = HourCells::new();
 
         if self.tail.is_some() {
             let mut out = Frame::new();
-            let mut out_offset: u32 = 0;
-            let mut frame_offset = 0;
+            let mut out_frame = FrameId::HEAD;
+            let mut frame_id = FrameId::HEAD;
             let mut hops = 0;
 
             loop {
-                let frame = self.read_frame(frame_offset)?;
+                let frame = self.read_frame(frame_id)?;
                 let mut offset = FRAME_HEADER_LEN;
 
                 while offset < frame.records_end() {
                     let entry = frame.entry_at(offset).map_err(corrupted)?;
 
                     if out.free() < entry.len {
-                        out.set_next(out_offset + FRAME_LEN as u32);
+                        let next = self.compact_frame_after(out_frame)?;
+                        out.set_next(Some(next));
                         data.write_all(out.as_bytes())?;
-                        out_offset += FRAME_LEN as u32;
+
+                        if next.file != out_frame.file {
+                            data.flush()?;
+                            data = std::io::BufWriter::new(File::create(data_path(next.file))?);
+                            files += 1;
+                        }
+
+                        out_frame = next;
                         out = Frame::new();
                     }
 
@@ -500,7 +575,7 @@ impl HourFile {
                             cells.set(
                                 second,
                                 Cell {
-                                    frame: out_offset,
+                                    frame: out_frame,
                                     offset: at as u32,
                                 },
                             );
@@ -510,16 +585,16 @@ impl HourFile {
                     offset += entry.len;
                 }
 
-                if frame.next() == 0 {
+                let Some(next) = frame.next() else {
                     break;
-                }
+                };
 
                 hops += 1;
-                if hops > self.frames_count {
+                if hops > self.frames_count() {
                     return Err(corrupted(CHAIN_LOOP));
                 }
 
-                frame_offset = frame.next();
+                frame_id = next;
             }
 
             if out.used() > 0 {
@@ -540,7 +615,33 @@ impl HourFile {
             }
         }
 
-        Ok(())
+        Ok(files as u8)
+    }
+
+    /// The frame of a compact copy after `frame`: the next one in its file, or the first
+    /// one of the next file when the file is as long as a data file grows
+    fn compact_frame_after(&self, frame: FrameId) -> std::io::Result<FrameId> {
+        let next_offset = frame.offset as u64 + FRAME_LEN as u64;
+
+        if next_offset < self.data_file_len {
+            return Ok(FrameId {
+                file: frame.file,
+                offset: next_offset as u32,
+            });
+        }
+
+        if frame.file as usize + 1 >= MAX_DATA_FILES {
+            return Err(corrupted(format!(
+                "The copy of {} needs more than {} data files",
+                self.name(),
+                MAX_DATA_FILES
+            )));
+        }
+
+        Ok(FrameId {
+            file: frame.file + 1,
+            offset: 0,
+        })
     }
 
     /// The last entry of the second and its length
@@ -555,7 +656,7 @@ impl HourFile {
         let mut position = Position::of(cell);
         let mut last = None;
 
-        for _ in 0..=self.frames_count {
+        for _ in 0..=self.frames_count() {
             let frame = self.frame(position.frame)?;
 
             while position.offset < frame.records_end() {
@@ -569,12 +670,12 @@ impl HourFile {
                 position.offset += entry.len;
             }
 
-            if frame.next() == 0 {
+            let Some(next) = frame.next() else {
                 return Ok(last);
-            }
+            };
 
             position = Position {
-                frame: frame.next(),
+                frame: next,
                 offset: FRAME_HEADER_LEN,
             };
         }
@@ -589,7 +690,7 @@ impl HourFile {
     }
 
     /// A second with no entries goes before the first entry of the nearest later second
-    /// which has one, at the end of the chain otherwise. `None` - the file has no entries.
+    /// which has one, at the end of the chain otherwise. `None` - the hour has no entries.
     fn place_for_new_second(&mut self, second: usize) -> Result<Option<Position>, String> {
         let later = match self.last_second {
             Some(last) if last > second => self.cells.first_from(second + 1),
@@ -631,7 +732,7 @@ impl HourFile {
             });
         };
 
-        for _ in 0..=self.frames_count {
+        for _ in 0..=self.frames_count() {
             let (free, records_end, next) = {
                 let frame = self.frame(place.frame)?;
                 (frame.free(), frame.records_end(), frame.next())
@@ -645,9 +746,9 @@ impl HourFile {
                 return self.halve_and_insert(place, entry);
             }
 
-            if next == 0 {
+            let Some(next) = next else {
                 return self.append_frame(place.frame, entry);
-            }
+            };
 
             // The end of a full frame is the start of the next one
             place = Position {
@@ -675,14 +776,14 @@ impl HourFile {
         place.to_cell()
     }
 
-    fn append_frame(&mut self, last: u32, entry: &[u8]) -> Result<Cell, String> {
+    fn append_frame(&mut self, last: FrameId, entry: &[u8]) -> Result<Cell, String> {
         let frame = self.allocate_frame()?;
 
         self.frames
             .get_mut(&frame)
             .unwrap()
             .insert(FRAME_HEADER_LEN, entry);
-        self.frames.get_mut(&last).unwrap().set_next(frame);
+        self.frames.get_mut(&last).unwrap().set_next(Some(frame));
 
         self.mark_dirty(frame);
         self.mark_dirty(last);
@@ -698,12 +799,13 @@ impl HourFile {
     /// the entry boundary nearest the middle of its entries, ties to the lower one; the
     /// entry goes into the lower half when its place is at or before the boundary. The
     /// upper half moves in front of the entries of the next frame when that one has room
-    /// for it, into a new frame chained between the two otherwise.
+    /// for it, into a new frame chained between the two otherwise - in the data file new
+    /// frames go to, whichever file the halved one is in.
     fn halve_and_insert(&mut self, place: Position, entry: &[u8]) -> Result<Cell, String> {
         let next = self.frames[&place.frame].next();
 
         // Everything the insert touches is read before anything changes
-        if next != 0 {
+        if let Some(next) = next {
             self.frame(next)?;
         }
 
@@ -716,7 +818,9 @@ impl HourFile {
                 .into_iter()
                 .skip(1)
                 .min_by_key(|boundary| (boundary.abs_diff(middle), *boundary))
-                .ok_or_else(|| format!("The full frame at {} has a single entry", place.frame))?;
+                .ok_or_else(|| {
+                    format!("The full frame {:?} has a single entry", place.frame)
+                })?;
 
             (boundary, frame.records_end())
         };
@@ -727,19 +831,18 @@ impl HourFile {
 
         if lower_len > FRAME_CAPACITY || upper_len > FRAME_CAPACITY {
             return Err(format!(
-                "An entry of {} bytes fits neither half of the frame at {}",
+                "An entry of {} bytes fits neither half of the frame {:?}",
                 entry.len(),
                 place.frame
             ));
         }
 
-        let into_next = next != 0 && self.frames[&next].free() >= upper_len;
+        let into_next = next.map_or(false, |next| self.frames[&next].free() >= upper_len);
 
-        if !into_next && self.frames_count >= MAX_FRAMES {
+        if !into_next && self.room_for_frames() == 0 {
             return Err(format!(
-                "The data file {} has {} frames, and there is no room for more",
-                self.data_path.display(),
-                self.frames_count
+                "The data files of {} have no room for more frames",
+                self.name()
             ));
         }
 
@@ -779,34 +882,40 @@ impl HourFile {
             upper.extend_from_slice(&after);
         }
 
-        let destination = if into_next {
-            for cell in self.cells.iter_mut() {
-                if cell.frame == next {
-                    cell.offset += upper.len() as u32;
+        let destination = match next.filter(|_| into_next) {
+            Some(next) => {
+                for cell in self.cells.iter_mut() {
+                    if cell.frame == next {
+                        cell.offset += upper.len() as u32;
+                    }
                 }
+
+                self.frames
+                    .get_mut(&next)
+                    .unwrap()
+                    .insert(FRAME_HEADER_LEN, &upper);
+                self.mark_dirty(next);
+                next
             }
+            None => {
+                let frame = self.allocate_frame()?;
 
-            self.frames
-                .get_mut(&next)
-                .unwrap()
-                .insert(FRAME_HEADER_LEN, &upper);
-            self.mark_dirty(next);
-            next
-        } else {
-            let frame = self.allocate_frame()?;
+                let new_frame = self.frames.get_mut(&frame).unwrap();
+                new_frame.insert(FRAME_HEADER_LEN, &upper);
+                new_frame.set_next(next);
 
-            let new_frame = self.frames.get_mut(&frame).unwrap();
-            new_frame.insert(FRAME_HEADER_LEN, &upper);
-            new_frame.set_next(next);
+                self.frames
+                    .get_mut(&place.frame)
+                    .unwrap()
+                    .set_next(Some(frame));
 
-            self.frames.get_mut(&place.frame).unwrap().set_next(frame);
+                if next.is_none() {
+                    self.tail = Some(frame);
+                }
 
-            if next == 0 {
-                self.tail = Some(frame);
+                self.mark_dirty(frame);
+                frame
             }
-
-            self.mark_dirty(frame);
-            frame
         };
 
         self.mark_dirty(place.frame);
@@ -850,80 +959,114 @@ impl HourFile {
         self.mark_dirty(position.frame);
     }
 
-    fn allocate_frame(&mut self) -> Result<u32, String> {
-        if self.frames_count >= MAX_FRAMES {
-            return Err(format!(
-                "The data file {} has {} frames, and there is no room for more",
-                self.data_path.display(),
-                self.frames_count
-            ));
-        }
+    /// How many frames more the data files can take
+    fn room_for_frames(&self) -> u64 {
+        let per_file = self.data_file_len.div_ceil(FRAME_LEN as u64);
 
-        let offset = self.frames_count * FRAME_LEN as u32;
-        self.frames_count += 1;
-        self.frames.insert(offset, Frame::new());
+        let in_last = self
+            .data_files
+            .last()
+            .map_or(0, |last| per_file.saturating_sub(last.frames_count as u64));
 
-        Ok(offset)
+        in_last + (MAX_DATA_FILES - self.data_files.len()) as u64 * per_file
     }
 
-    fn mark_dirty(&mut self, frame: u32) {
+    /// A new frame goes into the last data file until it is `data_file_len` long, into a
+    /// new one then
+    fn allocate_frame(&mut self) -> Result<FrameId, String> {
+        let last_is_full = self.data_files.last().map_or(true, |last| {
+            last.frames_count as u64 * FRAME_LEN as u64 >= self.data_file_len
+        });
+
+        if last_is_full {
+            if self.data_files.len() >= MAX_DATA_FILES {
+                return Err(format!(
+                    "{} has {} data files, and there is no room for more",
+                    self.name(),
+                    MAX_DATA_FILES
+                ));
+            }
+
+            self.data_files.push(DataFile {
+                file: None,
+                frames_count: 0,
+                frames_on_disk: 0,
+            });
+        }
+
+        let file = self.data_files.len() - 1;
+        let data_file = &mut self.data_files[file];
+
+        let frame = FrameId {
+            file: file as u8,
+            offset: data_file.frames_count * FRAME_LEN as u32,
+        };
+
+        data_file.frames_count += 1;
+        self.frames.insert(frame, Frame::new());
+
+        Ok(frame)
+    }
+
+    fn mark_dirty(&mut self, frame: FrameId) {
         if !self.dirty.contains(&frame) {
             self.dirty.push(frame);
         }
     }
 
     /// The frame, read into memory for writing
-    fn frame(&mut self, offset: u32) -> Result<&mut Frame, String> {
-        if !self.frames.contains_key(&offset) {
-            let frame = self
-                .read_frame_from_disk(offset)
+    fn frame(&mut self, frame: FrameId) -> Result<&mut Frame, String> {
+        if !self.frames.contains_key(&frame) {
+            let read = self
+                .read_frame_from_disk(frame)
                 .map_err(|err| err.to_string())?;
-            self.frames.insert(offset, frame);
+            self.frames.insert(frame, read);
         }
 
-        Ok(self.frames.get_mut(&offset).unwrap())
+        Ok(self.frames.get_mut(&frame).unwrap())
     }
 
     /// The frame, without keeping it in memory
-    fn read_frame(&self, offset: u32) -> std::io::Result<Frame> {
-        match self.frames.get(&offset) {
+    fn read_frame(&self, frame: FrameId) -> std::io::Result<Frame> {
+        match self.frames.get(&frame) {
             Some(frame) => Ok(frame.clone()),
-            None => self.read_frame_from_disk(offset),
+            None => self.read_frame_from_disk(frame),
         }
     }
 
-    fn read_frame_from_disk(&self, offset: u32) -> std::io::Result<Frame> {
-        if offset % FRAME_LEN as u32 != 0 || offset / FRAME_LEN as u32 >= self.frames_on_disk {
-            return Err(corrupted(format!(
-                "{} has no frame at {}",
-                self.data_path.display(),
-                offset
-            )));
-        }
-
-        let (data_file, _) = self.files.as_ref().unwrap();
+    fn read_frame_from_disk(&self, frame: FrameId) -> std::io::Result<Frame> {
+        let file = self
+            .data_files
+            .get(frame.file as usize)
+            .filter(|data_file| {
+                frame.offset % FRAME_LEN as u32 == 0
+                    && (frame.offset / FRAME_LEN as u32) < data_file.frames_on_disk
+            })
+            .and_then(|data_file| data_file.file.as_ref())
+            .ok_or_else(|| corrupted(format!("{} has no frame {:?}", self.name(), frame)))?;
 
         let mut bytes = vec![0u8; FRAME_LEN];
-        data_file.read_exact_at(&mut bytes, offset as u64)?;
+        file.read_exact_at(&mut bytes, frame.offset as u64)?;
 
         Frame::from_bytes(bytes).map_err(corrupted)
     }
 
-    fn find_tail(&self) -> std::io::Result<Option<u32>> {
-        if self.frames_count == 0 {
+    fn find_tail(&self) -> std::io::Result<Option<FrameId>> {
+        if self.frames_count() == 0 {
             return Ok(None);
         }
 
-        let mut offset = self.cells.last().map(|(_, cell)| cell.frame).unwrap_or(0);
+        let mut frame = self
+            .cells
+            .last()
+            .map(|(_, cell)| cell.frame)
+            .unwrap_or(FrameId::HEAD);
 
-        for _ in 0..=self.frames_count {
-            let next = self.read_frame(offset)?.next();
-
-            if next == 0 {
-                return Ok(Some(offset));
+        for _ in 0..=self.frames_count() {
+            match self.read_frame(frame)?.next() {
+                Some(next) => frame = next,
+                None => return Ok(Some(frame)),
             }
-
-            offset = next;
         }
 
         Err(corrupted(CHAIN_LOOP))
@@ -937,10 +1080,10 @@ impl HourFile {
             return Ok(result);
         }
 
-        let mut frame_offset = 0;
+        let mut frame_id = FrameId::HEAD;
 
-        for _ in 0..=self.frames_count {
-            let frame = self.read_frame(frame_offset)?;
+        for _ in 0..=self.frames_count() {
+            let frame = self.read_frame(frame_id)?;
             let mut offset = FRAME_HEADER_LEN;
 
             while offset < frame.records_end() {
@@ -956,11 +1099,10 @@ impl HourFile {
                 offset += entry.len;
             }
 
-            if frame.next() == 0 {
-                return Ok(result);
+            match frame.next() {
+                Some(next) => frame_id = next,
+                None => return Ok(result),
             }
-
-            frame_offset = frame.next();
         }
 
         Err(corrupted(CHAIN_LOOP))
@@ -969,28 +1111,34 @@ impl HourFile {
     /// Finds the cells again by walking the chain from its head. A frame, a link or an
     /// entry which does not read ends the chain there: the frame keeps its entries before
     /// it and becomes the last one.
-    fn rebuild(&mut self, data_len: u64) -> std::io::Result<()> {
+    fn rebuild(&mut self) -> std::io::Result<()> {
         self.cells = HourCells::new();
 
-        let (data_file, index_file) = self.files.as_ref().unwrap();
-
-        if data_len % FRAME_LEN as u64 != 0 {
-            data_file.set_len(self.frames_count as u64 * FRAME_LEN as u64)?;
+        // A frame a file ends inside is cut off
+        for data_file in &self.data_files {
+            if let Some(file) = &data_file.file {
+                file.set_len(data_file.frames_count as u64 * FRAME_LEN as u64)?;
+            }
         }
 
         let mut visited = HashSet::new();
-        let mut frame_offset = 0;
+        let mut frame_id = FrameId::HEAD;
 
-        while self.frames_count > 0 {
-            visited.insert(frame_offset);
+        while self.frames_count() > 0 {
+            visited.insert(frame_id);
 
-            let mut frame = match self.read_frame_from_disk(frame_offset) {
+            let mut frame = match self.read_frame_from_disk(frame_id) {
                 Ok(frame) => frame,
                 Err(_) => {
-                    // Not even the head reads: there is nothing in the file
-                    data_file.set_len(0)?;
-                    self.frames_count = 0;
-                    self.frames_on_disk = 0;
+                    // Not even the head reads: there is nothing in the files
+                    for data_file in &mut self.data_files {
+                        if let Some(file) = &data_file.file {
+                            file.set_len(0)?;
+                        }
+
+                        data_file.frames_count = 0;
+                        data_file.frames_on_disk = 0;
+                    }
                     break;
                 }
             };
@@ -999,10 +1147,9 @@ impl HourFile {
             let mut cut = false;
 
             while offset < frame.records_end() {
-                let second = frame
-                    .entry_at(offset)
-                    .ok()
-                    .and_then(|entry| second_of(self.hour_start, entry.time).map(|s| (s, entry.len)));
+                let second = frame.entry_at(offset).ok().and_then(|entry| {
+                    second_of(self.hour_start, entry.time).map(|second| (second, entry.len))
+                });
 
                 match second {
                     Some((second, len)) => {
@@ -1010,7 +1157,7 @@ impl HourFile {
                             self.cells.set(
                                 second,
                                 Cell {
-                                    frame: frame_offset,
+                                    frame: frame_id,
                                     offset: offset as u32,
                                 },
                             );
@@ -1035,27 +1182,31 @@ impl HourFile {
             }
 
             let next = frame.next();
-            let next_reads = next != 0
-                && !visited.contains(&next)
-                && self.read_frame_from_disk(next).is_ok();
+            let next_reads = next.map_or(false, |next| {
+                !visited.contains(&next) && self.read_frame_from_disk(next).is_ok()
+            });
 
-            if cut || (next != 0 && !next_reads) {
+            if cut || (next.is_some() && !next_reads) {
                 if cut {
                     frame.split_off(offset);
                 }
 
-                frame.set_next(0);
-                data_file.write_all_at(frame.as_bytes(), frame_offset as u64)?;
+                frame.set_next(None);
+                self.data_files[frame_id.file as usize]
+                    .file
+                    .as_ref()
+                    .unwrap()
+                    .write_all_at(frame.as_bytes(), frame_id.offset as u64)?;
                 break;
             }
 
-            if next == 0 {
-                break;
+            match next {
+                Some(next) => frame_id = next,
+                None => break,
             }
-
-            frame_offset = next;
         }
 
+        let index_file = self.index_file.as_ref().unwrap();
         index_file.write_all_at(&self.cells.to_index_file(), 0)?;
         index_file.set_len(super::INDEX_FILE_LEN as u64)?;
         self.index_clean_on_disk = true;
@@ -1065,30 +1216,29 @@ impl HourFile {
 
     /// Every entry of the chain in its order: its frame, offset and time
     #[cfg(test)]
-    pub fn walk(&self) -> Vec<(u32, usize, i64)> {
+    pub fn walk(&self) -> Vec<(FrameId, usize, i64)> {
         let mut result = Vec::new();
 
         if self.tail.is_none() {
             return result;
         }
 
-        let mut frame_offset = 0;
+        let mut frame_id = FrameId::HEAD;
 
         loop {
-            let frame = self.read_frame(frame_offset).unwrap();
+            let frame = self.read_frame(frame_id).unwrap();
             let mut offset = FRAME_HEADER_LEN;
 
             while offset < frame.records_end() {
                 let entry = frame.entry_at(offset).unwrap();
-                result.push((frame_offset, offset, entry.time));
+                result.push((frame_id, offset, entry.time));
                 offset += entry.len;
             }
 
-            if frame.next() == 0 {
-                return result;
+            match frame.next() {
+                Some(next) => frame_id = next,
+                None => return result,
             }
-
-            frame_offset = frame.next();
         }
     }
 
@@ -1097,12 +1247,18 @@ impl HourFile {
     pub fn read_all(&self) -> Vec<LogRecordProto> {
         self.walk()
             .into_iter()
-            .flat_map(|(frame_offset, offset, _)| {
-                let frame = self.read_frame(frame_offset).unwrap();
+            .flat_map(|(frame_id, offset, _)| {
+                let frame = self.read_frame(frame_id).unwrap();
                 let entry = frame.entry_at(offset).unwrap();
                 decompress_records(entry.payload).unwrap()
             })
             .collect()
+    }
+
+    /// How many data files the hour has
+    #[cfg(test)]
+    pub fn data_files_count(&self) -> usize {
+        self.data_files.len()
     }
 }
 

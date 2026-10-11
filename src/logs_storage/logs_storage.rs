@@ -17,8 +17,9 @@ use crate::{
 
 use super::{
     data_file_name, decompress_records, index_file_name, scan_seconds, second_of, DataSource,
-    key_index_file_name, Entry, FilterCounts, HourCells, HourFile, HourKeyIndex, LogsStream,
-    PendingLogs, ReadyBucket, S3Archive, SearchFilter, FRAME_LEN, MICROS_PER_SECOND,
+    key_index_file_name, DataFiles, Entry, FilterCounts, HourCells, HourFile, HourKeyIndex,
+    LogsStream, PendingLogs, ReadyBucket, S3Archive, SearchFilter, DATA_FILE_LEN, FRAME_LEN,
+    MAX_DATA_FILES, MICROS_PER_SECOND,
 };
 
 /// Hours stay on the local disk this long after they end. Then Debug and Info are
@@ -64,7 +65,7 @@ pub enum SearchDirection {
 
 /// A data file of an hour a search reads, with what its indexes say of the filter
 struct HourSource {
-    data: DataSource,
+    data: DataFiles,
     cells: Arc<HourCells>,
     counts: FilterCounts,
 }
@@ -142,7 +143,7 @@ impl HourToRead {
         let read_len = if self
             .sources
             .iter()
-            .any(|source| matches!(source.data, DataSource::S3 { .. }))
+            .any(|source| matches!(source.data, DataFiles::S3 { .. }))
         {
             S3_READ_LEN
         } else {
@@ -156,7 +157,9 @@ impl HourToRead {
             records += source.cells.total();
 
             if let Some((_, last)) = source.cells.last() {
-                bytes += last.frame as u64 + FRAME_LEN as u64;
+                bytes += last.frame.file as u64 * DATA_FILE_LEN
+                    + last.frame.offset as u64
+                    + FRAME_LEN as u64;
             }
         }
 
@@ -338,7 +341,7 @@ impl LogsStorage {
 
         let dir = self.dir(stream);
 
-        if !create && !dir.join(data_file_name(hour)).exists() {
+        if !create && !dir.join(data_file_name(hour, 0)).exists() {
             return Ok(None);
         }
 
@@ -582,7 +585,7 @@ impl LogsStorage {
 
                     if file.has_entries() {
                         result.sources.push(HourSource {
-                            data: DataSource::Local(file.data_path().to_path_buf()),
+                            data: file.data_files(),
                             cells: Arc::new(file.cells().clone()),
                             counts: file.key_index().counts_of(filter).await,
                         });
@@ -603,9 +606,9 @@ impl LogsStorage {
                                 };
 
                                 result.sources.push(HourSource {
-                                    data: DataSource::S3 {
+                                    data: DataFiles::S3 {
                                         archive: s3.clone(),
-                                        file_name: data_file_name(hour),
+                                        hour,
                                     },
                                     cells,
                                     counts: key_index.counts_of(filter).await,
@@ -682,7 +685,7 @@ impl LogsStorage {
         messages
     }
 
-    /// The hours the stream has a data file of
+    /// The hours the stream has data files of
     fn local_hours(&self, stream: LogsStream) -> BTreeSet<DateHourKey> {
         let mut result = BTreeSet::new();
 
@@ -694,7 +697,7 @@ impl LogsStorage {
             let hour = entry
                 .file_name()
                 .to_str()
-                .and_then(|name| name.strip_suffix(".data"))
+                .and_then(|name| name.strip_suffix(".data00"))
                 .and_then(DateHourKey::parse_from_str);
 
             if let Some(hour) = hour {
@@ -751,7 +754,17 @@ impl LogsStorage {
         let _file = handle.as_ref().map(|handle| handle.file.blocking_write());
 
         let dir = self.dir(stream);
-        remove_if_exists(&dir.join(data_file_name(hour)))?;
+
+        for file in 0..MAX_DATA_FILES {
+            let path = dir.join(data_file_name(hour, file as u8));
+
+            if !path.exists() {
+                break;
+            }
+
+            std::fs::remove_file(path)?;
+        }
+
         remove_if_exists(&dir.join(index_file_name(hour)))?;
         remove_if_exists(&dir.join(key_index_file_name(hour)))?;
 
@@ -789,24 +802,31 @@ impl LogsStorage {
         };
 
         let dir = self.dir(LogsStream::Main);
-        let data_copy = dir.join(format!("{}.upload", data_file_name(hour)));
         let index_copy = dir.join(format!("{}.upload", index_file_name(hour)));
         let key_index_copy = dir.join(format!("{}.upload", key_index_file_name(hour)));
 
         let storage = self.clone();
-        let copies = [data_copy.clone(), index_copy.clone(), key_index_copy.clone()];
+        let copies_dir = dir.clone();
+        let copies = (index_copy.clone(), key_index_copy.clone());
         let copied = tokio::task::spawn_blocking(move || {
-            storage.seal_and_copy(hour, &copies[0], &copies[1], &copies[2])
+            storage.seal_and_copy(hour, &copies_dir, &copies.0, &copies.1)
         })
         .await
         .map_err(|err| err.to_string())?;
 
-        let uploaded = match copied {
-            Ok(()) => s3.upload(hour, &data_copy, &index_copy, &key_index_copy).await,
-            Err(err) => Err(err),
+        let uploaded = match &copied {
+            Ok(data_copies) => {
+                s3.upload(hour, data_copies, &index_copy, &key_index_copy)
+                    .await
+            }
+            Err(err) => Err(err.clone()),
         };
 
-        for copy in [&data_copy, &index_copy, &key_index_copy] {
+        for copy in copied
+            .iter()
+            .flatten()
+            .chain([&index_copy, &key_index_copy])
+        {
             let _ = tokio::fs::remove_file(copy).await;
         }
 
@@ -824,13 +844,14 @@ impl LogsStorage {
         .map_err(|err| err.to_string())?
     }
 
+    /// Returns the copies of the data files, `.data00.upload` ...
     fn seal_and_copy(
         &self,
         hour: DateHourKey,
-        data: &Path,
+        dir: &Path,
         index: &Path,
         key_index: &Path,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<PathBuf>, String> {
         let now = DateTimeAsMicroseconds::now().unix_microseconds;
 
         let handle = self
@@ -842,8 +863,14 @@ impl LogsStorage {
         file.set_sealed(true);
 
         file.flush(true).map_err(|err| err.to_string())?;
-        file.compact_to(data, index, key_index)
-            .map_err(|err| err.to_string())
+
+        let data_copy = |file: u8| dir.join(format!("{}.upload", data_file_name(hour, file)));
+
+        let files = file
+            .compact_to(data_copy, index, key_index)
+            .map_err(|err| err.to_string())?;
+
+        Ok((0..files).map(data_copy).collect())
     }
 
     fn set_sealed(&self, stream: LogsStream, hour: DateHourKey, sealed: bool) {
@@ -904,7 +931,7 @@ fn seconds_of(hour_start: i64, from: i64, to: i64) -> (usize, usize) {
 
 async fn scan_hour(
     hour: DateHourKey,
-    source: &DataSource,
+    source: &DataFiles,
     cells: &HourCells,
     from_second: usize,
     to_second: usize,
@@ -1019,13 +1046,19 @@ fn gc_legacy_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logs_storage::{Cell, KeyIndex, LogRecordCtxProto, LogRecordProto};
+    use crate::logs_storage::{Cell, FrameId, KeyIndex, LogRecordCtxProto, LogRecordProto};
 
     #[tokio::test]
     async fn seconds_far_apart_are_read_in_passes_of_their_own() {
         let mut cells = HourCells::new();
         for second in 0..1000 {
-            cells.set(second, Cell { frame: 0, offset: 10 });
+            cells.set(
+                second,
+                Cell {
+                    frame: FrameId::HEAD,
+                    offset: 11,
+                },
+            );
             cells.set_count(second, 100);
         }
 
@@ -1048,7 +1081,10 @@ mod tests {
         let cells = Arc::new(cells);
 
         let source_of = |counts: FilterCounts| HourSource {
-            data: DataSource::Local(PathBuf::new()),
+            data: DataFiles::Local {
+                dir: PathBuf::new(),
+                hour: DateHourKey::from(2026101112),
+            },
             cells: cells.clone(),
             counts,
         };
