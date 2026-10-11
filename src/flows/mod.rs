@@ -10,6 +10,8 @@ mod get_events;
 pub use get_events::*;
 mod search_logs;
 pub use search_logs::*;
+mod flush_logs_to_files;
+pub use flush_logs_to_files::*;
 mod init;
 pub use init::*;
 pub mod ignore_single_event;

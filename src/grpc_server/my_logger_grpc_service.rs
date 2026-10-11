@@ -3,9 +3,11 @@ use std::time::Duration;
 
 use super::server::GrpcService;
 use crate::app::APP_VERSION;
+use crate::hourly_statistics::StatisticsHour;
+use crate::logs_storage::SearchDirection;
 use crate::my_logger_grpc::my_logger_server::MyLogger;
 use crate::my_logger_grpc::*;
-use crate::repo::dto::IgnoreWhereModel;
+use crate::repo::dto::{IgnoreWhereModel, LogItemDto, LogLevelDto};
 use crate::repo::DateHourKey;
 
 use my_grpc_extensions::server::generate_server_stream;
@@ -77,6 +79,7 @@ impl MyLogger for GrpcService {
                     context,
                     None,
                     request.take as usize,
+                    SearchDirection::Down,
                 )
                 .await
             }
@@ -110,34 +113,21 @@ impl MyLogger for GrpcService {
             self.app.update_ui_url(request.ui_url.as_str()).await;
         }
 
-        let (tantivy_stats, sqlite_stats) = tokio::join!(
-            self.app.logs_repo.get_statistics(),
-            self.app.sqlite_logs_repo.get_statistics(),
-        );
+        let hour: StatisticsHour = DateTimeAsMicroseconds::now().into();
+        let totals = self
+            .app
+            .hourly_statistics
+            .lock()
+            .await
+            .get_hour_totals(hour);
 
-        let mut result = StatisticData {
-            info_count: 0,
-            warning_count: 0,
-            error_count: 0,
-            fatal_count: 0,
-            debug_count: 0,
-        };
-
-        for itm in tantivy_stats.into_iter().chain(sqlite_stats.into_iter()) {
-            match itm.level {
-                crate::repo::dto::LogLevelDto::Info => result.info_count += itm.count as i32,
-                crate::repo::dto::LogLevelDto::Warning => {
-                    result.warning_count += itm.count as i32
-                }
-                crate::repo::dto::LogLevelDto::Error => result.error_count += itm.count as i32,
-                crate::repo::dto::LogLevelDto::FatalError => {
-                    result.fatal_count += itm.count as i32
-                }
-                crate::repo::dto::LogLevelDto::Debug => result.debug_count += itm.count as i32,
-            }
-        }
-
-        Ok(tonic::Response::new(result))
+        Ok(tonic::Response::new(StatisticData {
+            info_count: totals.info as i32,
+            warning_count: totals.warning as i32,
+            error_count: totals.error as i32,
+            fatal_count: totals.fatal_error as i32,
+            debug_count: totals.debug as i32,
+        }))
     }
 
     generate_server_stream!(stream_name:"ScanAndSearchStream", item_name:"LogEventGrpcModel");
@@ -167,6 +157,7 @@ impl MyLogger for GrpcService {
                     None,
                     Some(request.phrase.as_str()),
                     request.take as usize,
+                    SearchDirection::Down,
                 )
                 .await
             }
@@ -181,6 +172,38 @@ impl MyLogger for GrpcService {
                 .await
             }
         };
+
+        my_grpc_extensions::grpc_server_streams::send_from_iterator_with_transformation(
+            response.into_iter(),
+            move |dto| super::mapper::to_log_event_grpc_model(dto),
+        )
+        .await
+    }
+
+    generate_server_stream!(stream_name:"SearchUpStream", item_name:"LogEventGrpcModel");
+    async fn search_up(
+        &self,
+        request: tonic::Request<SearchLogsRequest>,
+    ) -> Result<tonic::Response<Self::SearchUpStream>, tonic::Status> {
+        let response = self
+            .search_logs(request.into_inner(), SearchDirection::Up)
+            .await;
+
+        my_grpc_extensions::grpc_server_streams::send_from_iterator_with_transformation(
+            response.into_iter(),
+            move |dto| super::mapper::to_log_event_grpc_model(dto),
+        )
+        .await
+    }
+
+    generate_server_stream!(stream_name:"SearchDownStream", item_name:"LogEventGrpcModel");
+    async fn search_down(
+        &self,
+        request: tonic::Request<SearchLogsRequest>,
+    ) -> Result<tonic::Response<Self::SearchDownStream>, tonic::Status> {
+        let response = self
+            .search_logs(request.into_inner(), SearchDirection::Down)
+            .await;
 
         my_grpc_extensions::grpc_server_streams::send_from_iterator_with_transformation(
             response.into_iter(),
@@ -352,7 +375,52 @@ pub enum RequestType {
     DateRange(DateTimeAsMicroseconds, DateTimeAsMicroseconds),
 }
 
+impl GrpcService {
+    async fn search_logs(
+        &self,
+        request: SearchLogsRequest,
+        direction: SearchDirection,
+    ) -> Vec<LogItemDto> {
+        if is_valid_url_to_update(request.ui_url.as_str()) {
+            self.app.update_ui_url(request.ui_url.as_str()).await;
+        }
+
+        let levels: Vec<LogLevelDto> = request.levels().map(|level| level.into()).collect();
+        let context: BTreeMap<String, String> = request
+            .context_keys
+            .into_iter()
+            .map(|ctx| (ctx.key, ctx.value))
+            .collect();
+
+        let (from_date, to_date) =
+            RequestType::from_request(request.from_time, request.to_time).get_range();
+
+        crate::flows::search_logs(
+            &self.app,
+            from_date,
+            to_date,
+            (!levels.is_empty()).then_some(levels),
+            (!context.is_empty()).then_some(context),
+            Some(request.phrase.as_str()),
+            request.take as usize,
+            direction,
+        )
+        .await
+    }
+}
+
 impl RequestType {
+    /// The first and the last microsecond asked for
+    pub fn get_range(&self) -> (DateTimeAsMicroseconds, DateTimeAsMicroseconds) {
+        match self {
+            RequestType::HourKey(date_key) => (
+                date_key.hour_start(),
+                DateTimeAsMicroseconds::new(date_key.hour_end().unix_microseconds - 1),
+            ),
+            RequestType::DateRange(from, to) => (*from, *to),
+        }
+    }
+
     pub fn from_request(from_time: i64, to_time: i64) -> Self {
         if to_time == 0 {
             let date_key = if from_time <= 0 {

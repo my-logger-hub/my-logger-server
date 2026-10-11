@@ -8,6 +8,7 @@ use mcp_server_middleware::McpToolCall;
 
 use crate::{
     app::{AppContext, PROCESS_CONTEXT_KEY},
+    logs_storage::SearchDirection,
     repo::dto::{LogItemDto, LogLevelDto},
 };
 
@@ -30,7 +31,7 @@ pub struct SearchLogsInputData {
     #[property(description: "Optional. Filter by application version. Matches the 'Version' context key. Case-insensitive.")]
     pub version: Option<String>,
 
-    #[property(description: "Optional. Full-text search phrase across message and context (Tantivy QueryParser syntax). Empty or omitted means no phrase filter.")]
+    #[property(description: "Optional. Case-insensitive substring searched in the message, the process and the context values. Empty or omitted means no phrase filter.")]
     pub phrase: Option<String>,
 
     #[property(
@@ -48,7 +49,7 @@ pub struct SearchLogsResponse {
     #[property(description: "Number of records returned.")]
     pub count: i64,
 
-    #[property(description: "True if the result was truncated by `take`. Re-query with a smaller time range or stricter filters if so.")]
+    #[property(description: "True if `take` records were found before `from_date` was reached: there may be earlier ones. To read on, ask again with `to_date` just before the first returned record.")]
     pub truncated: bool,
 
     #[property(description: "Matching log records as JSON array string sorted by timestamp ascending.")]
@@ -67,7 +68,7 @@ impl SearchLogsHandler {
 
 impl ToolDefinition for SearchLogsHandler {
     const FUNC_NAME: &'static str = "search_logs";
-    const DESCRIPTION: &'static str = "Search log records by time range with optional application, version, and full-text phrase filters. Returns matching records sorted by timestamp ascending, capped by `take`.";
+    const DESCRIPTION: &'static str = "Search log records by time range with optional application, version, level and substring phrase filters. Returns the latest matching records, at most `take` of them, sorted by timestamp ascending.";
 }
 
 #[async_trait::async_trait]
@@ -120,6 +121,7 @@ impl McpToolCall<SearchLogsInputData, SearchLogsResponse> for SearchLogsHandler 
             context,
             phrase_owned.as_deref(),
             take,
+            SearchDirection::Down,
         )
         .await;
 

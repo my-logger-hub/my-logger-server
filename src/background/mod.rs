@@ -1,12 +1,12 @@
-mod flush_to_db_timer;
 mod flush_to_elastic_timer;
-mod flush_to_sqlite_timer;
-pub use flush_to_db_timer::*;
+mod flush_to_files_timer;
 pub use flush_to_elastic_timer::*;
-pub use flush_to_sqlite_timer::*;
+pub use flush_to_files_timer::*;
 mod gc_time;
 pub use gc_time::*;
 mod notify_telegram_timer;
 pub use notify_telegram_timer::*;
 mod persist_statistics_timer;
 pub use persist_statistics_timer::*;
+mod upload_to_s3_timer;
+pub use upload_to_s3_timer::*;

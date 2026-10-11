@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -14,6 +12,19 @@ pub struct ElasticSettings {
     pub esecure: String,
     pub url: String,
     pub env_source: String,
+}
+
+/// Where the Warning, Error and FatalError hours go once they are older than the hours
+/// kept on the local disk
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct S3Settings {
+    pub endpoint: String,
+    pub region: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub bucket: String,
+    /// The folder of the hours in the bucket; `EnvName` when it is not set
+    pub prefix: Option<String>,
 }
 
 #[derive(my_settings_reader::SettingsModel, Serialize, Deserialize, Debug, Clone)]
@@ -34,6 +45,9 @@ pub struct SettingsModel {
 
     #[serde(rename = "ElasticSettings")]
     pub elastic: Option<ElasticSettings>,
+
+    #[serde(rename = "S3Settings")]
+    pub s3: Option<S3Settings>,
 
     #[serde(rename = "EnvName")]
     pub env_name: String,
@@ -66,14 +80,14 @@ impl SettingsReader {
         read_access.elastic.clone()
     }
 
+    pub async fn get_s3_settings(&self) -> Option<S3Settings> {
+        let read_access = self.settings.read().await;
+        read_access.s3.clone()
+    }
+
     pub async fn get_hours_to_gc(&self) -> u64 {
         let read_access = self.settings.read().await;
         read_access.hours_to_gc
-    }
-
-    pub async fn get_duration_to_gc(&self) -> Duration {
-        let read_access = self.settings.read().await;
-        Duration::from_secs(60 * 60 * read_access.hours_to_gc as u64)
     }
 
     pub async fn get_logs_db_path(&self, file_name: Option<&str>) -> String {

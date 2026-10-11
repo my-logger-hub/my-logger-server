@@ -27,20 +27,14 @@ pub struct MemoryStatsResponse {
     #[property(description: "jemalloc metadata overhead, in MB.")]
     pub jemalloc_metadata_mb: i64,
 
-    #[property(description: "Items waiting in the in-memory queue of the tantivy (Warning/Error/FatalError) flusher. Capped at 100000; oldest items are dropped on overflow.")]
-    pub tantivy_queue_len: i64,
-    #[property(description: "Items waiting in the in-memory queue of the sqlite (Debug/Info) flusher. Same 100000 cap.")]
-    pub sqlite_queue_len: i64,
+    #[property(description: "Records waiting in memory to be written to the hour files: a second waits 5 seconds, so records coming late join its block. Capped at 200000; the oldest seconds are dropped on overflow.")]
+    pub pending_records: i64,
 
-    #[property(description: "Tantivy hour indexes currently held open in the pool. Each holds mmap'ed segment files and an index reader.")]
-    pub tantivy_open_indexes: i64,
-    #[property(description: "Tantivy hour indexes with a live IndexWriter (~15MB heap each). Normally 1-2: the current and the previous hour; idle writers are closed by GC.")]
-    pub tantivy_open_writers: i64,
-    #[property(description: "Keys of the open tantivy hour indexes (YYYYMMDDHH UTC), as JSON array string.")]
-    pub tantivy_open_index_keys_json: String,
+    #[property(description: "Hour files held open, as JSON array string of 'logs/YYYYMMDDHH' (Warning/Error/FatalError) and 'debug-info/YYYYMMDDHH' (Debug/Info). Each keeps its index of 3600 seconds (28 KB) in memory; the current and the previous hour stay open, the others are closed after 10 idle minutes.")]
+    pub open_hour_files_json: String,
 
-    #[property(description: "Open sqlite hour databases, as JSON array string of 'Level:YYYYMMDDHH'. Each holds a page cache.")]
-    pub sqlite_open_dbs_json: String,
+    #[property(description: "32 KB frames of the data files held in memory: the last frame of each hour written into.")]
+    pub cached_frames: i64,
 
     #[property(description: "Insights cache: number of cached values per context key, as JSON object string. Capped at 10000 values per key.")]
     pub insights_counts_json: String,
@@ -61,7 +55,7 @@ impl MemoryStatsHandler {
 
 impl ToolDefinition for MemoryStatsHandler {
     const FUNC_NAME: &'static str = "get_memory_stats";
-    const DESCRIPTION: &'static str = "Get memory-management diagnostics of the logger server itself: jemalloc allocator statistics (allocated / active / resident / mapped / retained / metadata) plus the internal state that drives memory usage - flush queue lengths, open tantivy hour-indexes and writers, open sqlite hour-databases, insights cache sizes, hourly-statistics retention. Use it to diagnose memory consumption or to verify that memory is released after load. For a history of allocator readings (sampled every 30s) call `get_debug_console`.";
+    const DESCRIPTION: &'static str = "Get memory-management diagnostics of the logger server itself: jemalloc allocator statistics (allocated / active / resident / mapped / retained / metadata) plus the internal state that drives memory usage - records waiting to be written, open hour files and the frames held of them, insights cache sizes, hourly-statistics retention. Use it to diagnose memory consumption or to verify that memory is released after load. For a history of allocator readings (sampled every 30s) call `get_debug_console`.";
 }
 
 #[async_trait::async_trait]
@@ -73,11 +67,7 @@ impl McpToolCall<MemoryStatsInputData, MemoryStatsResponse> for MemoryStatsHandl
         let jemalloc = crate::app::read_jemalloc_stats();
         let mb = |value: usize| (value / 1024 / 1024) as i64;
 
-        let tantivy_queue_len = self.app.logs_queue.len().await as i64;
-        let sqlite_queue_len = self.app.sqlite_logs_queue.len().await as i64;
-
-        let (index_keys, open_writers) = self.app.logs_repo.get_open_indexes().await;
-        let sqlite_dbs = self.app.sqlite_logs_repo.get_open_db_keys().await;
+        let storage = self.app.logs_storage.stats();
         let insights = self.app.insights_repo.get_value_counts().await;
 
         let hourly_statistics_hours = {
@@ -92,14 +82,10 @@ impl McpToolCall<MemoryStatsInputData, MemoryStatsResponse> for MemoryStatsHandl
             jemalloc_mapped_mb: jemalloc.as_ref().map(|s| mb(s.mapped)).unwrap_or(-1),
             jemalloc_retained_mb: jemalloc.as_ref().map(|s| mb(s.retained)).unwrap_or(-1),
             jemalloc_metadata_mb: jemalloc.as_ref().map(|s| mb(s.metadata)).unwrap_or(-1),
-            tantivy_queue_len,
-            sqlite_queue_len,
-            tantivy_open_indexes: index_keys.len() as i64,
-            tantivy_open_writers: open_writers as i64,
-            tantivy_open_index_keys_json: serde_json::to_string(&index_keys)
+            pending_records: storage.pending_records as i64,
+            open_hour_files_json: serde_json::to_string(&storage.open_hours)
                 .unwrap_or_else(|_| "[]".to_string()),
-            sqlite_open_dbs_json: serde_json::to_string(&sqlite_dbs)
-                .unwrap_or_else(|_| "[]".to_string()),
+            cached_frames: storage.cached_frames as i64,
             insights_counts_json: serde_json::to_string(&insights)
                 .unwrap_or_else(|_| "{}".to_string()),
             hourly_statistics_hours,

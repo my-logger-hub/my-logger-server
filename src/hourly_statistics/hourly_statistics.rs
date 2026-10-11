@@ -96,6 +96,21 @@ impl HourlyStatistics {
         result
     }
 
+    /// The counters of every application of the hour, added up
+    pub fn get_hour_totals(&self, hour: StatisticsHour) -> HourlyStatisticsItem {
+        let mut result = HourlyStatisticsItem::default();
+
+        for item in self.data.get(&hour).into_iter().flat_map(|apps| apps.values()) {
+            result.info += item.info;
+            result.warning += item.warning;
+            result.error += item.error;
+            result.fatal_error += item.fatal_error;
+            result.debug += item.debug;
+        }
+
+        result
+    }
+
     pub fn hours_count(&self) -> usize {
         self.data.len()
     }

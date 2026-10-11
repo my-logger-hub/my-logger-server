@@ -9,7 +9,8 @@ use crate::{
     hourly_statistics::HourlyStatistics,
     ignore_single_events::IgnoreSingleEventCache,
     insights_repo::InsightsRepo,
-    repo::{LogsRepo, SettingsRepo, SqliteLogsRepo},
+    logs_storage::{LogsStorage, S3Archive},
+    repo::SettingsRepo,
     telegram::TelegramNotificationData,
 };
 
@@ -25,10 +26,7 @@ pub struct ElasticInner {
 pub struct AppContext {
     pub settings_reader: Arc<crate::settings::SettingsReader>,
     pub app_states: Arc<AppStates>,
-    pub logs_repo: LogsRepo,
-    pub logs_queue: LogsQueue,
-    pub sqlite_logs_repo: SqliteLogsRepo,
-    pub sqlite_logs_queue: LogsQueue,
+    pub logs_storage: Arc<LogsStorage>,
     pub settings_repo: SettingsRepo,
     pub filter_events_cache: FilterEventsCache,
     pub elastic: Option<ElasticInner>,
@@ -79,17 +77,19 @@ impl AppContext {
 
         let insight_keys = settings_reader.get_insights_keys().await;
 
-        let insights_repo = InsightsRepo::new(insight_keys, 1024);
+        let insights_repo = InsightsRepo::new(insight_keys.clone(), 1024);
 
         let debug_console = Arc::new(DebugConsole::new());
 
+        let s3 = settings_reader
+            .get_s3_settings()
+            .await
+            .map(|settings| S3Archive::new(&settings, &env_name));
+
         Self {
-            env_name,
             app_states: Arc::new(AppStates::create_initialized()),
-            logs_repo: LogsRepo::new(logs_db_path.clone()).await,
-            logs_queue: LogsQueue::new("tantivy", debug_console.clone()),
-            sqlite_logs_repo: SqliteLogsRepo::new(logs_db_path),
-            sqlite_logs_queue: LogsQueue::new("sqlite", debug_console.clone()),
+            logs_storage: Arc::new(LogsStorage::new(logs_db_path, s3, insight_keys.clone())),
+            env_name,
             settings_repo: SettingsRepo::new(settings_db_path).await,
             filter_events_cache: FilterEventsCache::new(),
             ignore_single_event_cache: Mutex::new(IgnoreSingleEventCache::new()),

@@ -68,6 +68,18 @@ message DeleteIgnoreEventGrpcRequest{
     string Marker = 3;
 }
 
+// FromTime and ToTime are encoded as in ReadLogEventRequest. Levels, ContextKeys and Phrase
+// filter together; an empty one does not filter.
+message SearchLogsRequest{
+    string UiUrl = 1;
+    int64 FromTime = 2;
+    int64 ToTime = 3;
+    int32 Take = 4;
+    repeated LogLevelGrpcModel Levels = 5;
+    repeated LogEventContext ContextKeys = 6;
+    string Phrase = 7;
+}
+
 message ScanAndSearchRequest{
     string UiUrl = 1;
     string Phrase = 2;
@@ -129,6 +141,11 @@ service MyLogger {
     rpc GetStatistic(GetStatisticsRequest) returns (StatisticData);
 
     rpc ScanAndSearch(ScanAndSearchRequest) returns (stream LogEventGrpcModel);
+
+    // From FromTime up - the oldest first - until ToTime or Take records
+    rpc SearchUp(SearchLogsRequest) returns (stream LogEventGrpcModel);
+    // From ToTime down - the latest first - until FromTime or Take records
+    rpc SearchDown(SearchLogsRequest) returns (stream LogEventGrpcModel);
 
     rpc SetIgnoreEvent(IgnoreEventGrpcModel) returns (google.protobuf.Empty);
     rpc GetIgnoreEvents(google.protobuf.Empty) returns (stream IgnoreEventGrpcModel);

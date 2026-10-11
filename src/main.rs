@@ -13,6 +13,7 @@ mod hourly_statistics;
 mod http;
 mod ignore_single_events;
 mod insights_repo;
+mod logs_storage;
 mod mcp;
 mod repo;
 mod settings;
@@ -54,12 +55,22 @@ async fn main() {
         elastic_timer.start();
     }
     let mut my_timer = MyTimer::new(Duration::from_millis(500), my_logger::LOGGER.clone());
-    my_timer.register_timer("ToDbFlusher", Arc::new(FlushToDbTimer::new(app.clone())));
     my_timer.register_timer(
-        "ToSqliteFlusher",
-        Arc::new(FlushToSqliteTimer::new(app.clone())),
+        "ToFilesFlusher",
+        Arc::new(FlushToFilesTimer::new(app.clone())),
     );
     my_timer.start();
+
+    if app.logs_storage.has_s3() {
+        // An upload of an hour may take minutes
+        let mut s3_timer = MyTimer::new_with_execute_timeout(
+            Duration::from_secs(60),
+            Duration::from_secs(60 * 60),
+            my_logger::LOGGER.clone(),
+        );
+        s3_timer.register_timer("ToS3Uploader", Arc::new(UploadToS3Timer::new(app.clone())));
+        s3_timer.start();
+    }
 
     let mut gc_timer = MyTimer::new(Duration::from_secs(30), my_logger::LOGGER.clone());
     gc_timer.register_timer("GcTimer", Arc::new(GcTimer::new(app.clone()).await));
@@ -79,4 +90,7 @@ async fn main() {
     crate::grpc_server::start(app.clone());
 
     app.app_states.wait_until_shutdown().await;
+
+    // What waits in memory is written before the process ends
+    crate::flows::flush_logs_to_files(&app, true).await;
 }

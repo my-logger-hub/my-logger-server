@@ -28,19 +28,15 @@ pub async fn post_items(app: &AppContext, log_events: Vec<LogItem>) {
         elastic.logs_queue.add(log_events.clone()).await;
     }
 
-    let (low, high): (Vec<Arc<LogItem>>, Vec<Arc<LogItem>>) =
-        log_events.into_iter().partition(|e| {
-            matches!(
-                e.level,
-                my_logger::LogLevel::Debug | my_logger::LogLevel::Info
-            )
-        });
+    let dropped = app.logs_storage.add_pending(log_events);
 
-    if !low.is_empty() {
-        app.sqlite_logs_queue.add(low).await;
-    }
-    if !high.is_empty() {
-        app.logs_queue.add(high).await;
+    if dropped > 0 {
+        app.debug_console
+            .push(format!(
+                "The buffer of records to write is full: {} oldest records are dropped",
+                dropped
+            ))
+            .await;
     }
 }
 

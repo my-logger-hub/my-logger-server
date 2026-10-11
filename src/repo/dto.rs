@@ -52,16 +52,9 @@ impl<'s> Into<LogLevelDto> for &'s LogLevel {
 #[derive(Debug, Clone)]
 pub struct LogItemDto {
     pub moment: DateTimeAsMicroseconds,
-    pub id: String,
     pub level: LogLevelDto,
     pub message: String,
     pub context: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct StatisticsModel {
-    pub level: LogLevelDto,
-    pub count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

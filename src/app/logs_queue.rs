@@ -94,11 +94,6 @@ impl LogsQueue {
         }
     }
 
-    pub async fn len(&self) -> usize {
-        let read_access = self.queue.lock().await;
-        read_access.as_ref().map(|queue| queue.len()).unwrap_or(0)
-    }
-
     pub async fn get(&self, max_items_to_dequeue: usize) -> Option<VecDeque<Arc<LogItem>>> {
         let mut write_access = self.queue.lock().await;
 

@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use rust_extensions::{date_time::DateTimeAsMicroseconds, MyTimerTick, RepeatTimerIteration};
 
-use crate::{
-    app::AppContext,
-    repo::{DateHourKey, LOG_FILE_PREFIX},
-};
+use crate::app::AppContext;
 
 pub struct GcTimer {
     pub app: Arc<AppContext>,
@@ -29,37 +26,18 @@ impl MyTimerTick for GcTimer {
             hourly_statistics.gc();
         }
 
-        let mut to_date = DateTimeAsMicroseconds::now();
-        to_date.add_days(-1);
+        let hours_to_gc = self.app.settings_reader.get_hours_to_gc().await;
+        let storage = self.app.logs_storage.clone();
 
-        self.app.logs_repo.gc(to_date).await;
+        let messages = tokio::task::spawn_blocking(move || {
+            storage.gc(DateTimeAsMicroseconds::now(), hours_to_gc)
+        })
+        .await
+        .unwrap();
 
-        self.app.logs_repo.close_idle_writers().await;
-
-        let mut to_date = DateTimeAsMicroseconds::now();
-        to_date.add_hours(-6);
-
-        self.app
-            .logs_repo
-            .gc_level(to_date, crate::repo::dto::LogLevelDto::Warning)
-            .await;
-
-        let now = DateTimeAsMicroseconds::now();
-        let mut debug_cutoff = now;
-        debug_cutoff.add_minutes(-60);
-        self.app
-            .sqlite_logs_repo
-            .gc(crate::repo::dto::LogLevelDto::Debug, debug_cutoff)
-            .await;
-
-        let mut info_cutoff = now;
-        info_cutoff.add_hours(-2);
-        self.app
-            .sqlite_logs_repo
-            .gc(crate::repo::dto::LogLevelDto::Info, info_cutoff)
-            .await;
-
-        gc_files(&self.app).await;
+        for message in messages {
+            self.app.debug_console.push(message).await;
+        }
 
         self.app.ignore_single_event_cache.lock().await.gc();
 
@@ -69,71 +47,4 @@ impl MyTimerTick for GcTimer {
 
         RepeatTimerIteration::WithInterval
     }
-}
-
-async fn gc_files(app: &AppContext) {
-    let files = app.logs_repo.get_files().await;
-
-    let gc_from = app.settings_reader.get_duration_to_gc().await;
-
-    let gc_date_key = DateTimeAsMicroseconds::now().sub(gc_from);
-    let gc_date_key: DateHourKey = gc_date_key.into();
-
-    app.debug_console
-        .push(format!(
-            "GC from date_key: {}. Files: {:?}",
-            gc_date_key.get_value(),
-            files
-        ))
-        .await;
-
-    let mut to_gc = Vec::new();
-    for file_name in files {
-        let file_to_process = check_if_file_name_with_logs(&file_name);
-        if file_to_process.is_none() {
-            continue;
-        }
-
-        let file_to_process = file_to_process;
-
-        if file_to_process.is_none() {
-            continue;
-        }
-
-        let date_key = file_to_process.unwrap();
-
-        if date_key <= gc_date_key {
-            to_gc.push(date_key);
-        }
-    }
-
-    for date_key in to_gc {
-        let file_name = app.logs_repo.compile_file_name(date_key);
-        app.logs_repo.prepare_to_delete(date_key).await;
-
-        let result = tokio::fs::remove_dir_all(file_name.as_str()).await;
-
-        if let Err(err) = result {
-            panic!("Can not delete index {}. Err: {}", file_name, err);
-        }
-    }
-}
-
-fn check_if_file_name_with_logs(file_name: &str) -> Option<DateHourKey> {
-    if !file_name.starts_with(LOG_FILE_PREFIX) {
-        return None;
-    }
-
-    let date_key_as_string = &file_name[LOG_FILE_PREFIX.len()..];
-
-    let date_component = DateHourKey::parse_from_str(date_key_as_string);
-
-    if date_component.is_none() {
-        println!(
-            "Somehow file {} has wrong date_key_as_string='{}'",
-            file_name, date_key_as_string
-        );
-    }
-
-    return date_component;
 }

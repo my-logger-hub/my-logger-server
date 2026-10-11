@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use rust_extensions::date_time::DateTimeAsMicroseconds;
 
-use crate::{app::AppContext, my_logger_grpc::*, repo::dto::LogItemDto};
+use crate::{
+    app::AppContext, logs_storage::SearchDirection, my_logger_grpc::*, repo::dto::LogItemDto,
+};
 
 pub async fn get_events(
     app: &AppContext,
@@ -30,5 +32,15 @@ pub async fn get_events(
 
     let to_date = to_date.unwrap_or_else(DateTimeAsMicroseconds::now);
 
-    super::search_logs(app, from_date, to_date, log_levels, context, None, take).await
+    super::search_logs(
+        app,
+        from_date,
+        to_date,
+        log_levels,
+        context,
+        None,
+        take,
+        SearchDirection::Down,
+    )
+    .await
 }
