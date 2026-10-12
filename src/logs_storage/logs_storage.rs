@@ -659,8 +659,8 @@ impl LogsStorage {
         result
     }
 
-    /// Deletes the local hours whose time is over, lets go of the idle ones, and deletes
-    /// what the storage before this one left, as it expires. Returns what was done.
+    /// Deletes the local hours whose time is over and lets go of the idle ones. Returns
+    /// what was done.
     pub fn gc(&self, now: DateTimeAsMicroseconds, hours_to_gc: u64) -> Vec<String> {
         let now = now.unix_microseconds;
         let mut messages = Vec::new();
@@ -708,12 +708,6 @@ impl LogsStorage {
                 messages.push(format!("GC: {} is deleted", path.display()));
             }
         }
-
-        messages.extend(gc_legacy_storage(
-            &self.root,
-            main_cutoff(now, hours_to_gc),
-            DateHourKey::new(DateTimeAsMicroseconds::new(now - LOCAL_HOURS * HOUR_MICROS)),
-        ));
 
         messages
     }
@@ -1063,61 +1057,6 @@ fn remove_if_exists(path: &Path) -> std::io::Result<()> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         result => result,
     }
-}
-
-/// What the tantivy and sqlite storages left - `logs-YYYYMMDDHH` folders and
-/// `debug|info/logs-YYYYMMDDHH.db` files - deleted as it expires, the way it was.
-fn gc_legacy_storage(
-    root: &Path,
-    main_cutoff: DateHourKey,
-    debug_info_cutoff: DateHourKey,
-) -> Vec<String> {
-    let legacy_hour = |name: &str| {
-        name.strip_prefix("logs-")
-            .and_then(|rest| rest.get(..10))
-            .and_then(DateHourKey::parse_from_str)
-    };
-
-    let mut messages = Vec::new();
-
-    let dirs = [(root.to_path_buf(), main_cutoff, true)]
-        .into_iter()
-        .chain(["debug", "info"].map(|dir| (root.join(dir), debug_info_cutoff, false)));
-
-    for (dir, cutoff, folders) in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-
-            let Some(hour) = entry.file_name().to_str().and_then(legacy_hour) else {
-                continue;
-            };
-
-            if hour > cutoff || path.is_dir() != folders {
-                continue;
-            }
-
-            let removed = if folders {
-                std::fs::remove_dir_all(&path)
-            } else {
-                std::fs::remove_file(&path)
-            };
-
-            if removed.is_ok() {
-                messages.push(format!("GC: legacy {} is deleted", path.display()));
-            }
-        }
-
-        if !folders {
-            // Only an empty one is removed
-            let _ = std::fs::remove_dir(&dir);
-        }
-    }
-
-    messages
 }
 
 #[cfg(test)]

@@ -186,7 +186,6 @@ In memory, `BTreeMap<StatisticsHour, BTreeMap<Scope, BTreeMap<Application, Count
 - `GcTimer` (every 30 seconds):
   - deletes the hours of `debug-info/<scope>/` 2 hours after the hour ends;
   - without `s3_conn_string`, deletes the hours of `logs/<scope>/` 2 hours after the hour ends too; with S3 they are uploaded by then — when the upload fails, the local hour is deleted once it is older than `hours_to_gc`;
-  - deletes what the storage before this one left (`logs-YYYYMMDDHH/` of Tantivy, `debug|info/logs-*.db` of sqlite) by the same terms;
   - `hourly_statistics.gc()` keeps 48 hours in memory at most.
 - `UploadToS3Timer` (every minute, when `s3_conn_string` is set):
   - an hour of `logs/` 2 hours past its end is sealed — nothing is written into it any more — and copied for the upload: the data files into frames which follow one another, each filled before the next one starts and over to the next file after 3 GiB, so a read goes forward from the cell of its second with no jump; the index pointing into them; the key index whole, its page first. They are uploaded as `<prefix>/<scope>/YYYYMMDDHH.data00` …, `.index-by-key`, `.index` — the data files first, the index last; the prefix is `logs` unless `Prefix` of `s3_conn_string` gives one — and deleted locally. Searches read such hours from S3;
