@@ -523,6 +523,65 @@ async fn an_hour_which_is_read_finds_its_seconds_in_the_page_of_its_key_index() 
 }
 
 #[tokio::test]
+async fn a_range_with_no_start_is_searched_by_the_hours_there_are() {
+    use SearchDirection::{Down, Up};
+
+    let dir = test_dir("all-hours");
+    let storage = Arc::new(LogsStorage::new(&dir, None, no_scopes()));
+
+    let now = DateTimeAsMicroseconds::now().unix_microseconds;
+    let hour_start = |hours_ago: i64| {
+        DateHourKey::new(DateTimeAsMicroseconds::new(now - hours_ago * 3600 * MICROS_PER_SECOND))
+            .hour_start()
+            .unix_microseconds
+    };
+
+    // Ten records two hours ago and five an hour ago, of both streams: none in the current hour
+    let mut ascending = Vec::new();
+    for no in 0..10 {
+        ascending.push(hour_start(2) + no * MICROS_PER_SECOND);
+    }
+    for no in 0..5 {
+        ascending.push(hour_start(1) + no * MICROS_PER_SECOND);
+    }
+    let descending: Vec<i64> = ascending.iter().rev().copied().collect();
+
+    let items = ascending
+        .iter()
+        .enumerate()
+        .map(|(no, timestamp)| {
+            let level = if no % 2 == 0 { LogLevel::Error } else { LogLevel::Info };
+            item(level, *timestamp, "billing", "Message")
+        })
+        .collect();
+    storage.add_pending(items, None);
+    write_pending(&storage).await;
+
+    let all_filter = SearchFilter::new(None, None, None);
+    let times = |found: Vec<LogItemDto>| -> Vec<i64> {
+        found.iter().map(|item| item.moment.unix_microseconds).collect()
+    };
+
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, 0, now, &all_filter, 100, Down).await), descending);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, 0, now, &all_filter, 100, Up).await), ascending);
+
+    // The limit is found over the hours: five records of one and two of the other
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, 0, now, &all_filter, 7, Down).await), descending[..7]);
+    assert_eq!(times(storage.search(DEFAULT_PRODUCT_SCOPE, 0, now, &all_filter, 12, Up).await), ascending[..12]);
+
+    // The hours of one stream alone
+    let errors = SearchFilter::new(Some(vec![LogLevelDto::Error]), None, None);
+    let found = storage.search(DEFAULT_PRODUCT_SCOPE, 0, now, &errors, 6, Down).await;
+    let latest_errors: Vec<i64> = ascending.iter().step_by(2).rev().take(6).copied().collect();
+    assert_eq!(times(found), latest_errors);
+
+    // A range which ends before it starts has no hours
+    assert!(storage.search(DEFAULT_PRODUCT_SCOPE, now, 0, &all_filter, 100, Down).await.is_empty());
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
 async fn records_go_to_their_product_scopes() {
     use crate::repo::dto::ProductScopeDto;
 

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::time::Duration;
 
 use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct, TimeStruct};
 
@@ -24,23 +24,6 @@ impl DateHourKey {
 
     pub fn get_value(&self) -> i64 {
         self.0
-    }
-
-    pub fn get_keys_to_request(
-        mut from: DateTimeAsMicroseconds,
-        to: DateTimeAsMicroseconds,
-    ) -> BTreeMap<Self, ()> {
-        let to_key = Self::new(to);
-        let mut current = Self::new(from);
-
-        let mut result = BTreeMap::new();
-        while current <= to_key {
-            result.insert(current, ());
-            from = from.add(Duration::from_secs(60 * 60));
-            current = Self::new(from);
-        }
-
-        result
     }
 
     pub fn hour_start(&self) -> DateTimeAsMicroseconds {

@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -30,11 +30,19 @@ const MISSING_HOUR_TTL: Duration = Duration::from_secs(60);
 /// Indexes of hours in S3 kept in memory
 const INDEX_CACHE_SIZE: usize = 64;
 
+/// The hours of a scope the bucket lists are listed again after this
+const LISTED_HOURS_TTL: Duration = Duration::from_secs(60);
+
 /// The index of an hour in S3 and the page of keys and values of its key index
 pub type HourIndexes = (Arc<HourCells>, Arc<KeyIndexDirectory>);
 
 struct CachedIndex {
     indexes: Option<HourIndexes>,
+    loaded: Instant,
+}
+
+struct ListedHours {
+    hours: Arc<BTreeSet<DateHourKey>>,
     loaded: Instant,
 }
 
@@ -47,6 +55,9 @@ pub struct S3Archive {
     prefix: String,
     /// By product scope and hour
     indexes: Mutex<BTreeMap<(String, DateHourKey), CachedIndex>>,
+    /// The hours each product scope has an index of. Locked while the bucket is listed: an
+    /// upload or a delete which ends meanwhile changes what the listing brought
+    listed_hours: tokio::sync::Mutex<BTreeMap<String, ListedHours>>,
     bucket_is_ready: AtomicBool,
 }
 
@@ -80,6 +91,7 @@ impl S3Archive {
             bucket: settings.bucket.clone(),
             prefix: format!("{}/", prefix),
             indexes: Mutex::new(BTreeMap::new()),
+            listed_hours: tokio::sync::Mutex::new(BTreeMap::new()),
             bucket_is_ready: AtomicBool::new(false),
         }
     }
@@ -150,6 +162,70 @@ impl S3Archive {
         );
 
         Ok(indexes_of_hour)
+    }
+
+    /// The hours of the scope which are in S3: the ones the bucket lists an index of
+    pub async fn hours(&self, scope: &str) -> Result<Arc<BTreeSet<DateHourKey>>, String> {
+        let mut listed_hours = self.listed_hours.lock().await;
+
+        if let Some(listed) = listed_hours.get(scope) {
+            if listed.loaded.elapsed() < LISTED_HOURS_TTL {
+                return Ok(listed.hours.clone());
+            }
+        }
+
+        let scope_prefix = self.key(scoped_name(scope, String::new()));
+
+        let hours: BTreeSet<DateHourKey> = self
+            .list_keys(&scope_prefix)
+            .await?
+            .iter()
+            .filter_map(|key| key.strip_prefix(scope_prefix.as_str())?.strip_suffix(".index"))
+            .filter_map(DateHourKey::parse_from_str)
+            .collect();
+
+        let hours = Arc::new(hours);
+
+        listed_hours.insert(
+            scope.to_string(),
+            ListedHours {
+                hours: hours.clone(),
+                loaded: Instant::now(),
+            },
+        );
+
+        Ok(hours)
+    }
+
+    /// Every key of the bucket which starts with `prefix`
+    async fn list_keys(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let mut keys = Vec::new();
+        let mut continuation_token: Option<String> = None;
+
+        loop {
+            let page = self
+                .client
+                .list_objects_v2(
+                    &self.bucket,
+                    S3ListObjectsRequest {
+                        prefix: Some(prefix),
+                        continuation_token: continuation_token.as_deref(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|err| format!("Listing of {}: {}", self.bucket, err))?;
+
+            keys.extend(page.objects.into_iter().map(|object| object.key));
+
+            continuation_token = page.next_continuation_token;
+
+            if continuation_token.is_none() {
+                break;
+            }
+        }
+
+        Ok(keys)
     }
 
     /// A whole object; `None` - there is no such
@@ -233,6 +309,10 @@ impl S3Archive {
 
         self.indexes.lock().unwrap().remove(&(scope.to_string(), hour));
 
+        if let Some(listed) = self.listed_hours.lock().await.get_mut(scope) {
+            Arc::make_mut(&mut listed.hours).insert(hour);
+        }
+
         Ok(())
     }
 
@@ -283,48 +363,22 @@ impl S3Archive {
         cutoff: DateHourKey,
     ) -> Result<Vec<(String, DateHourKey)>, String> {
         let mut hours: BTreeMap<(String, DateHourKey), Vec<String>> = BTreeMap::new();
-        let mut continuation_token: Option<String> = None;
 
-        loop {
-            let page = self
-                .client
-                .list_objects_v2(
-                    &self.bucket,
-                    S3ListObjectsRequest {
-                        prefix: Some(self.prefix.as_str()),
-                        continuation_token: continuation_token.as_deref(),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(|err| format!("Listing of {}: {}", self.bucket, err))?;
+        for key in self.list_keys(self.prefix.as_str()).await? {
+            // `scope/YYYYMMDDHH.` and what the file of the hour is
+            let scope_and_hour = key
+                .strip_prefix(self.prefix.as_str())
+                .and_then(|name| name.split_once('/'))
+                .filter(|(_, name)| name.get(10..11) == Some("."))
+                .and_then(|(scope, name)| {
+                    let hour = DateHourKey::parse_from_str(name.get(..10)?)?;
+                    Some((scope.to_string(), hour))
+                });
 
-            for object in &page.objects {
-                // `scope/YYYYMMDDHH.` and what the file of the hour is
-                let scope_and_hour = object
-                    .key
-                    .strip_prefix(self.prefix.as_str())
-                    .and_then(|name| name.split_once('/'))
-                    .filter(|(_, name)| name.get(10..11) == Some("."))
-                    .and_then(|(scope, name)| {
-                        let hour = DateHourKey::parse_from_str(name.get(..10)?)?;
-                        Some((scope.to_string(), hour))
-                    });
-
-                if let Some((scope, hour)) = scope_and_hour {
-                    if hour <= cutoff {
-                        hours
-                            .entry((scope, hour))
-                            .or_default()
-                            .push(object.key.clone());
-                    }
+            if let Some((scope, hour)) = scope_and_hour {
+                if hour <= cutoff {
+                    hours.entry((scope, hour)).or_default().push(key);
                 }
-            }
-
-            continuation_token = page.next_continuation_token;
-
-            if continuation_token.is_none() {
-                break;
             }
         }
 
@@ -341,6 +395,10 @@ impl S3Archive {
             }
 
             self.indexes.lock().unwrap().remove(&(scope.clone(), *hour));
+
+            if let Some(listed) = self.listed_hours.lock().await.get_mut(scope) {
+                Arc::make_mut(&mut listed.hours).remove(hour);
+            }
         }
 
         Ok(hours.into_keys().collect())

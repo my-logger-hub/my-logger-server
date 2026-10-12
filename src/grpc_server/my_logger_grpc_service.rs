@@ -472,6 +472,13 @@ impl RequestType {
                 let date_key: DateHourKey = from_time.into();
                 date_key
             };
+
+            // Zero hours ago is not the current hour alone: every hour there is, up to its end
+            if from_time == 0 {
+                let (_, to) = Self::HourKey(date_key).get_range();
+                return Self::DateRange(DateTimeAsMicroseconds::new(0), to);
+            }
+
             return Self::HourKey(date_key);
         }
 
@@ -481,4 +488,29 @@ impl RequestType {
 
 pub fn is_valid_url_to_update(url: &str) -> bool {
     url.starts_with("https")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_hours_ago_is_every_hour_up_to_the_end_of_the_current_one() {
+        let now = DateTimeAsMicroseconds::now().unix_microseconds;
+        let hour_micros = 3600 * 1_000_000;
+
+        let (from, to) = RequestType::from_request(0, 0).get_range();
+        assert_eq!(from.unix_microseconds, 0);
+        assert!(to.unix_microseconds >= now && to.unix_microseconds < now + hour_micros);
+
+        // Hours ago, and an hour by its key: that hour alone
+        let (from, to) = RequestType::from_request(-1, 0).get_range();
+        assert_eq!(to.unix_microseconds - from.unix_microseconds, hour_micros - 1);
+        assert!(to.unix_microseconds < now && to.unix_microseconds >= now - hour_micros);
+
+        assert!(matches!(
+            RequestType::from_request(2026101112, 0),
+            RequestType::HourKey(key) if key.get_value() == 2026101112
+        ));
+    }
 }

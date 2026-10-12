@@ -14,13 +14,14 @@ A batch first goes through the ignore events and the ignore single events, then 
 
 ## Time-range contract
 
-Every method taking a time range (`Read`, `ScanAndSearch`, `SearchUp`, `SearchDown`) encodes it in `from_time` (`int64`) and `to_time` (`int64`) by one rule. The UI encodes one of three states; the server decodes them the same way.
+Every method taking a time range (`Read`, `ScanAndSearch`, `SearchUp`, `SearchDown`) encodes it in `from_time` (`int64`) and `to_time` (`int64`) by one rule. The UI encodes one of three states; the server decodes them the same way. Zero hours ago is not the current hour alone: it is every hour there is, so the last `take` records are found however long ago they came.
 
 ### States
 
 | UI state                  | `from_time`                                           | `to_time`                | Meaning on the server                            |
 |---------------------------|-------------------------------------------------------|--------------------------|--------------------------------------------------|
-| `HoursAgo(N)`, `N >= 0`   | `-N` (`0` for `N = 0`)                                | `0`                      | one hour: `now + from_time` hours                |
+| `HoursAgo(0)`             | `0`                                                   | `0`                      | every hour there is, up to the end of the current one |
+| `HoursAgo(N)`, `N >= 1`   | `-N`                                                  | `0`                      | one hour: `now + from_time` hours                |
 | `ExactHour(date_key)`     | `date_key` as `YYYYMMDDHH` (>= `2024010100`)          | `0`                      | one hour by its absolute key                     |
 | `Range(from_us, to_us)`   | unix microseconds (> 0)                               | unix microseconds (> 0)  | the range `[from_us..to_us]`                     |
 
@@ -28,7 +29,10 @@ Every method taking a time range (`Read`, `ScanAndSearch`, `SearchUp`, `SearchDo
 
 ```
 if to_time == 0:
-    if from_time <= 0:
+    if from_time == 0:
+        # zero hours ago: no start, the end of the current hour
+        → read every hour there is, see Search modes
+    if from_time < 0:
         # an offset in hours from now
         date_key = DateHourKey(now + from_time hours)
     else:
@@ -39,6 +43,8 @@ else:
     # a range in unix microseconds
     → read every hour within [from_time .. to_time]
 ```
+
+With zero hours ago `Read`, `ScanAndSearch` and `SearchDown` return the last `take` matching records of the scope, whichever hours they are in; `SearchUp` the first `take` ones of the oldest hour which is kept.
 
 ### UI side
 
@@ -58,7 +64,9 @@ match self {
 
 ```rust
 if to_time == 0 {
-    if from_time <= 0 {
+    if from_time == 0 {
+        DateRange(0.into(), end_of_the_current_hour)
+    } else if from_time < 0 {
         DateHourKey::from(now.add_hours(from_time))
     } else {
         DateHourKey::from(from_time)
@@ -102,6 +110,8 @@ A search is bounded by a range and `take`, and goes one of two ways — until th
 
 - **up** — from the start of the range, the oldest first: the hours one after another, each read forward from the index cell of the first second of the range;
 - **down** — from the end of the range, the latest first: the bottom second is found in the index, which is in memory — down from the end of the range until the counts of the seconds add up to `take`, and to one read at least (64 KiB locally, 1 MiB from S3) — and the data is read up from it in one pass. A filter by level or by indexed keys turns the counts into the counts of `index-by-key` for its values — exact for one key, an upper bound for several or with a phrase: when fewer records match, the next bottom second is found the same way for what is missing, corrected by the share which matched. Seconds with no match are not read; the ones between two matching seconds are read through only while they hold less than one read.
+
+A range is searched by the hours of it which exist, not by every hour between its ends: the hours the scope has data files of on the local disk, and the ones it has an index of in S3 — the bucket is listed by scope, at most once a minute, an upload and a delete keeping the list up to date in between. So a range with no start — zero hours ago — costs what the hours which are kept do, and an hour with no records costs nothing.
 
 The files are read as streams through rust-extensions `BufferedReader`: a local file from the offset, an S3 object as a ranged download. Context filters are exact `key=value` matches and the phrase is a substring of the message, the process or a context value, both ignoring case. Records still waiting in memory are found too.
 

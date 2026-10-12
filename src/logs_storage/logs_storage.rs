@@ -418,6 +418,38 @@ impl LogsStorage {
         result
     }
 
+    /// The hours of the scope in `from ..= to` there are files of - on the local disk or in
+    /// S3 - in the streams the filter asks for. A range is searched by them alone: one with
+    /// no start costs what the hours which are kept do.
+    async fn hours_to_read(
+        &self,
+        scope: &str,
+        from: i64,
+        to: i64,
+        filter: &SearchFilter,
+    ) -> BTreeSet<DateHourKey> {
+        let mut hours = BTreeSet::new();
+
+        for stream in LogsStream::ALL {
+            if filter.wants(stream) {
+                hours.extend(self.local_hours(stream, scope));
+            }
+        }
+
+        if let (true, Some(s3)) = (filter.wants(LogsStream::Main), &self.s3) {
+            match s3.hours(scope).await {
+                Ok(in_s3) => hours.extend(in_s3.iter().copied()),
+                Err(err) => println!("{}", err),
+            }
+        }
+
+        let first = DateHourKey::new(DateTimeAsMicroseconds::new(from));
+        let last = DateHourKey::new(DateTimeAsMicroseconds::new(to));
+        hours.retain(|hour| first <= *hour && *hour <= last);
+
+        hours
+    }
+
     /// The hours one after another. In each, the top second of a pass is found in the
     /// indexes - up until the records which may match add up to what is missing, and the
     /// records to one read at least - and the seconds which may match are read up to it,
@@ -434,7 +466,7 @@ impl LogsStorage {
         let now = DateTimeAsMicroseconds::now().unix_microseconds;
         let mut result = Vec::new();
 
-        for hour in hours_of(from, to).keys().copied() {
+        for hour in self.hours_to_read(scope, from, to, filter).await {
             if result.len() >= limit {
                 break;
             }
@@ -531,7 +563,7 @@ impl LogsStorage {
         let now = DateTimeAsMicroseconds::now().unix_microseconds;
         let mut result = Vec::new();
 
-        for hour in hours_of(from, to).keys().rev().copied() {
+        for hour in self.hours_to_read(scope, from, to, filter).await.into_iter().rev() {
             if result.len() >= limit {
                 break;
             }
@@ -983,13 +1015,6 @@ fn hour_name(stream: LogsStream, scope: &str, hour: DateHourKey) -> String {
 /// The name of a file of an hour of the scope in S3, past the prefix
 pub fn scoped_name(scope: &str, file_name: String) -> String {
     format!("{}/{}", scope, file_name)
-}
-
-fn hours_of(from: i64, to: i64) -> BTreeMap<DateHourKey, ()> {
-    DateHourKey::get_keys_to_request(
-        DateTimeAsMicroseconds::new(from),
-        DateTimeAsMicroseconds::new(to),
-    )
 }
 
 /// The first and the last second of the hour within `from ..= to`
