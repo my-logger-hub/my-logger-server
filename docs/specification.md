@@ -114,7 +114,7 @@ One request, `SearchLogsRequest`, for both ways: `product_scope`, `from_time`, `
 
 ### CTX Search (`Read` gRPC)
 
-Exact `key=value` matches in the context of the record (`Process` counts as a key too), ignoring case. The same as `SearchDown` without a phrase; kept until the UI moves to `SearchUp` / `SearchDown`.
+Exact `key=value` matches in the context of the record (`Process` counts as a key too), ignoring case. The same as `SearchDown` without a phrase.
 
 - The UI sends `product_scope`, `context_keys: Vec<{key, value}>`, `levels`, `from_time`, `to_time`, `take`.
 - It returns a stream of `LogEventGrpcModel`, `timestamp` descending: the last `take` records of the range.
@@ -162,11 +162,11 @@ An hour is its data files `YYYYMMDDHH.data00`, `.data01` … `.dataFF`, `YYYYMMD
 
 ### Hourly statistics
 
-In memory, `BTreeMap<StatisticsHour, BTreeMap<Scope, BTreeMap<Application, Counters>>>`. Updated synchronously in `flows::post_items` — the scope of a record is found there the same way as for the storage. Persisted to `<logs_db_path>/statistics.json` every 60 seconds by `PersistStatisticsTimer`; `flows::init` restores it at start. A file of the format before product scopes is not read — the statistics start anew. `GetStatistic` returns the counters of the current hour over all scopes and applications.
+In memory, `BTreeMap<StatisticsHour, BTreeMap<Scope, BTreeMap<Application, Counters>>>`. Updated synchronously in `flows::post_items` — the scope of a record is found there the same way as for the storage. Persisted to `<logs_db_path>/statistics.json` every 60 seconds by `PersistStatisticsTimer`; `flows::init` restores it at start. `GetStatistic` returns the counters of the current hour over all scopes and applications.
 
 ### settings.json
 
-`<logs_db_path>/settings.json` holds everything set through MCP: the ignore events, the product scopes, the default scope and `hours_to_gc`. The YAML settings hold the infrastructure only: `logs_db_path`, `env_name`, `telegram_settings`, `elastic`, `s3_conn_string`. The file is read at start and written whole on every change. A file of the older format — the array of the ignore events alone — is read as such.
+`<logs_db_path>/settings.json` holds everything set through MCP: the ignore events, the product scopes, the default scope and `hours_to_gc`. The YAML settings hold the infrastructure only: `logs_db_path`, `env_name`, `telegram_settings`, `elastic`, `s3_conn_string`. The file is read at start and written whole on every change. A key which is not in the file has its default.
 
 ```json
 {

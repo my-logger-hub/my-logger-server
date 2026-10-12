@@ -4,17 +4,14 @@ use tokio::sync::Mutex;
 
 use super::dto::*;
 
-/// What `settings.json` holds. An older file is the array of the ignore events alone.
+/// What `settings.json` holds. A key which is not there has the value of `default()`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 struct SettingsFile {
-    #[serde(default)]
     ignore_events: Vec<IgnoreItemDto>,
-    #[serde(default = "default_product_scope")]
     default_product_scope: String,
     /// How long the Warning, Error and FatalError hours are kept in S3
-    #[serde(default = "default_hours_to_gc")]
     hours_to_gc: u64,
-    #[serde(default)]
     product_scopes: Vec<ProductScopeDto>,
 }
 
@@ -22,8 +19,8 @@ impl Default for SettingsFile {
     fn default() -> Self {
         Self {
             ignore_events: Vec::new(),
-            default_product_scope: default_product_scope(),
-            hours_to_gc: default_hours_to_gc(),
+            default_product_scope: crate::product_scopes::DEFAULT_PRODUCT_SCOPE.to_string(),
+            hours_to_gc: DEFAULT_HOURS_TO_GC,
             product_scopes: Vec::new(),
         }
     }
@@ -32,26 +29,7 @@ impl Default for SettingsFile {
 /// A week, until it is set
 const DEFAULT_HOURS_TO_GC: u64 = 7 * 24;
 
-fn default_hours_to_gc() -> u64 {
-    DEFAULT_HOURS_TO_GC
-}
-
-fn default_product_scope() -> String {
-    crate::product_scopes::DEFAULT_PRODUCT_SCOPE.to_string()
-}
-
 impl SettingsFile {
-    fn parse(bytes: &[u8]) -> Self {
-        if let Ok(file) = serde_json::from_slice::<SettingsFile>(bytes) {
-            return file;
-        }
-
-        Self {
-            ignore_events: serde_json::from_slice(bytes).unwrap_or_default(),
-            ..Default::default()
-        }
-    }
-
     fn product_scopes(&self) -> ProductScopesSettings {
         ProductScopesSettings {
             default_scope: self.default_product_scope.clone(),
@@ -68,7 +46,13 @@ pub struct SettingsRepo {
 impl SettingsRepo {
     pub async fn new(path: String) -> Self {
         let items = match tokio::fs::read(&path).await {
-            Ok(bytes) => SettingsFile::parse(&bytes),
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(file) => file,
+                Err(err) => {
+                    println!("{} does not read - the defaults are taken: {}", path, err);
+                    SettingsFile::default()
+                }
+            },
             Err(_) => SettingsFile::default(),
         };
         Self {
@@ -205,24 +189,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_older_file_is_the_array_of_the_ignore_events() {
-        let older = br#"[{"level":"Error","application":"billing","marker":"*"}]"#;
-        let file = SettingsFile::parse(older);
-        assert_eq!(file.ignore_events.len(), 1);
+    fn a_key_which_is_not_there_has_its_default() {
+        let file: SettingsFile = serde_json::from_str("{}").unwrap();
+        assert!(file.ignore_events.is_empty());
         assert!(file.product_scopes.is_empty());
         assert_eq!(file.default_product_scope, "default");
         assert_eq!(file.hours_to_gc, DEFAULT_HOURS_TO_GC);
+    }
 
-        let mut file = file;
-        file.default_product_scope = "main".to_string();
-        file.hours_to_gc = 48;
-        file.product_scopes.push(ProductScopeDto {
-            name: "trading".to_string(),
-            applications: vec!["trading-.*".to_string()],
-        });
+    #[test]
+    fn the_file_is_read_as_it_is_written() {
+        let file = SettingsFile {
+            ignore_events: vec![IgnoreItemDto {
+                level: LogLevelDto::Error,
+                application: "billing".to_string(),
+                marker: "*".to_string(),
+                expires_at: None,
+            }],
+            default_product_scope: "main".to_string(),
+            hours_to_gc: 48,
+            product_scopes: vec![ProductScopeDto {
+                name: "trading".to_string(),
+                applications: vec!["trading-.*".to_string()],
+            }],
+        };
 
         let written = serde_json::to_vec(&file).unwrap();
-        let read = SettingsFile::parse(&written);
+        let read: SettingsFile = serde_json::from_slice(&written).unwrap();
         assert_eq!(read.ignore_events, file.ignore_events);
         assert_eq!(read.product_scopes(), file.product_scopes());
         assert_eq!(read.hours_to_gc, 48);

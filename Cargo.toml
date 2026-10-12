@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 my-http-server = { tag = "0.9.0", git = "https://github.com/MyJetTools/my-http-server.git", features = [
-    "static-files",
     "macros",
 ] }
 my-http-utils = { tag = "0.1.0", git = "https://github.com/MyJetTools/my-http-utils.git", features = [
@@ -35,35 +34,22 @@ my-json = { tag = "0.3.2", git = "https://github.com/MyJetTools/my-json.git" }
 
 elastic-client = { git = "https://github.com/MyJetTools/elastic-client", tag = "0.1.5" }
 
-#my-postgres = { tag = "0.5.2", git = "https://github.com/MyJetTools/my-postgres.git", features = [
-#    "with-tls",
-#    "macros",
-#] }
-
 zstd = "0.13"
 regex = "*"
 
 mcp-server-middleware = { tag = "0.9.0", git = "https://github.com/my-ai-utils/mcp-server-middleware.git" }
 
 async-trait = "*"
-syn = "2"
 base64 = "0.22"
 tonic = "0.14"
 tonic-prost = "0.14"
 anyhow = "*"
 tokio = { version = "*", features = ["full"] }
-hyper = { version = "*", features = ["full"] }
 prost = "0.14"
 serde = { version = "*", features = ["derive"] }
-tokio-util = "*"
-futures = "*"
-signal-hook = "*"
+futures-core = "*"
 serde_yaml = "*"
 serde_json = "*"
-serde_repr = "*"
-uuid = { version = "*", features = ["v4"] }
-futures-core = "*"
-reqwest = "*"
 itoa = "1"
 tikv-jemallocator = { version = "*", features = [
     "unprefixed_malloc_on_supported_platforms",

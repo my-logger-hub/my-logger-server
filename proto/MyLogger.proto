@@ -43,12 +43,6 @@ message ReadLogEventRequest{
     optional string ProductScope = 8;
 }
 
-message GetStatisticRequest{
-    string UiUrl = 1;
-    int64 FromTime =2;
-    int64 ToTime =3;
-}
-
 message StatisticData{
     int32 InfoCount = 1;
     int32 WarningCount = 2;
