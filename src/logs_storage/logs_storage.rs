@@ -235,6 +235,16 @@ impl LogsStorage {
         self.s3.is_some()
     }
 
+    /// How long the hours are kept, in hours: `hours_to_gc` in S3 - without S3 only as long
+    /// as they stay on the local disk, whatever `hours_to_gc` is
+    pub fn hours_kept(&self, hours_to_gc: u64) -> u64 {
+        if self.has_s3() {
+            hours_to_gc
+        } else {
+            LOCAL_HOURS as u64
+        }
+    }
+
     pub fn product_scopes(&self) -> Arc<ProductScopes> {
         self.product_scopes.read().unwrap().clone()
     }

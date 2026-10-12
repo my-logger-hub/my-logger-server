@@ -148,6 +148,8 @@ message GetProductScopesResponse{
 
 message ServerInfoGrpcResponse{
     string Version = 1;
+    // How long the hours are kept: 2 when S3 is not set up - they are deleted 2 hours after
+    // they end then, whatever hours_to_gc is set
     uint32 HoursToGc = 2;
 }
 

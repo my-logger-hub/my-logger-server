@@ -654,6 +654,27 @@ async fn records_go_to_their_product_scopes() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[test]
+fn without_s3_the_hours_are_kept_as_long_as_they_stay_on_the_local_disk() {
+    use crate::settings::S3ConnectionSettings;
+
+    let dir = test_dir("hours-kept");
+
+    let local = LogsStorage::new(&dir, None, no_scopes());
+    assert!(!local.has_s3());
+    assert_eq!(local.hours_kept(168), 2);
+    assert_eq!(local.hours_kept(0), 2);
+
+    let s3 = S3Archive::new(&S3ConnectionSettings::parse(
+        "Endpoint=https://s3.local;Region=fsn1;AccessKey=key;SecretKey=secret;Bucket=logs",
+    ));
+    let archived = LogsStorage::new(&dir, Some(s3), no_scopes());
+    assert_eq!(archived.hours_kept(168), 168);
+    assert_eq!(archived.hours_kept(24), 24);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[tokio::test]
 async fn an_hour_not_kept_as_long_as_its_upload_takes_is_not_uploaded() {
     let dir = test_dir("short-gc");

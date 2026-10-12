@@ -189,6 +189,8 @@ In memory, `BTreeMap<StatisticsHour, BTreeMap<Scope, BTreeMap<Application, Count
 
 `hours_to_gc` is how long the main hours are kept in S3 — a week until it is set. An hour is uploaded 3 hours after it starts, so with 3 or less nothing goes to S3 and the main hours are deleted 2 hours after they end.
 
+`GetServerInfo` returns the version of the server and `HoursToGc` — how long the hours are kept, which the UI shows: `hours_to_gc` with S3, and 2 without `s3_conn_string`, when every hour is deleted 2 hours after it ends whatever `hours_to_gc` is. The MCP `get_hours_to_gc` tells the same in words — see below.
+
 ---
 
 ## Retention
@@ -229,8 +231,8 @@ Endpoint: `POST/GET/DELETE /mcp` on the HTTP port, beside REST and swagger. Stre
 | `set_product_scope` | `name`, `applications` (the regular expressions): creates the scope last, or replaces the one of the same name where it is. |
 | `delete_product_scope` | `name`. |
 | `set_default_product_scope` | `name`. |
-| `get_hours_to_gc` | `hours_to_gc`, and whether S3 is set up. |
-| `set_hours_to_gc` | `hours_to_gc`; lowering it deletes the older hours from S3 for good. |
+| `get_hours_to_gc` | How long the hours are kept, in words (`message`): 2 hours when S3 is not set up — `hours_to_gc` is named as not used — otherwise `hours_to_gc` for the main hours in S3. |
+| `set_hours_to_gc` | `hours_to_gc`; lowering it deletes the older hours from S3 for good. Answers as `get_hours_to_gc` does. |
 | `get_ignore_rules` | The ignore rules. |
 | `add_ignore_rule` | `level`, `application`, `marker` (`*` matches any), optional `expires_in_minutes`. |
 | `delete_ignore_rule` | `level`, `application`, `marker`. |

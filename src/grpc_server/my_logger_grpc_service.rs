@@ -360,9 +360,11 @@ impl MyLogger for GrpcService {
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<ServerInfoGrpcResponse>, tonic::Status> {
+        let hours_to_gc = self.app.settings_repo.get_hours_to_gc().await;
+
         let response = ServerInfoGrpcResponse {
             version: APP_VERSION.to_string(),
-            hours_to_gc: self.app.settings_repo.get_hours_to_gc().await as u32,
+            hours_to_gc: self.app.logs_storage.hours_kept(hours_to_gc) as u32,
         };
 
         Ok(tonic::Response::new(response))
